@@ -124,14 +124,18 @@ Int_t ValidateCosmicGenerator(const char* filename) {
         return 12;
     }
 
-    const auto cosmicFluxRef = 0.108215;
+    // Reference values updated after rest-for-physics/geant4lib#151 removed a double-counted
+    // 2*pi azimuth factor from the Guan formula. The integrated flux dropped by exactly 2*pi
+    // (0.108215 -> 0.0172229 counts/cm2/s, i.e. ~1.03 muons/cm2/min, matching the textbook
+    // sea-level value) and the equivalent simulated time N/(flux*surface) grew accordingly.
+    const auto cosmicFluxRef = 0.0172229;
     if (TMath::Abs(metadata->GetCosmicFluxInCountsPerCm2PerSecond() - cosmicFluxRef) / cosmicFluxRef >
         tolerance) {
         cout << "wrong cosmic flux: " << metadata->GetCosmicFluxInCountsPerCm2PerSecond() << endl;
         return 13;
     }
 
-    const auto simulationTimeRef = 9804.87;
+    const auto simulationTimeRef = 61606.0;
     if (TMath::Abs(metadata->GetEquivalentSimulatedTime() - simulationTimeRef) / simulationTimeRef >
         tolerance) {
         cout << "wrong equivalent simulation time: " << metadata->GetEquivalentSimulatedTime() << endl;
