@@ -29,7 +29,7 @@ void RunAction::BeginOfRunAction(const G4Run*) {
         }
         if (fSimulationManager->GetRestMetadata()->GetSimulationMaxTimeSeconds() > 0) {
             G4cout << "Maximum simulation time: "
-                   << ToTimeStringLong(fSimulationManager->GetRestMetadata()->GetSimulationMaxTimeSeconds())
+                   << TRestTools::ToTimeStringLong(fSimulationManager->GetRestMetadata()->GetSimulationMaxTimeSeconds())
                    << G4endl;
         }
         G4cout << "=======================================================================" << G4endl;
@@ -38,7 +38,7 @@ void RunAction::BeginOfRunAction(const G4Run*) {
     fSimulationManager->BeginOfRunAction();
 
     auto steppingVerbose = ((SteppingVerbose*)G4VSteppingVerbose::GetInstance());
-    steppingVerbose->SetSteppingVerbose(1);
+    steppingVerbose->SetSteppingVerbose(0);
 
     // inform the runManager to save random number seed
     G4RunManager::GetRunManager()->SetRandomNumberStore(false);

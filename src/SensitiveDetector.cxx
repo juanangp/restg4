@@ -37,7 +37,7 @@ G4bool SensitiveDetector::ProcessHits(G4Step* step, G4TouchableHistory*) {
         G4VPhysicalVolume* pv = th->GetVolume(depth - i);
         if (pv) {
             if (geant4path != "") {
-                geant4path += geometryInfo.GetPathSeparator().Data();
+                geant4path += geometryInfo.GetPathSeparator().c_str();
             }
             geant4path += pv->GetName();
         }

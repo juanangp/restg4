@@ -15,7 +15,9 @@
 #include <G4SystemOfUnits.hh>
 #include <G4UniformMagField.hh>
 #include <G4UserLimits.hh>
+#include <Math/GenVector/AxisAngle.h>
 #include <filesystem>
+#include <functional>
 
 #include "SimulationManager.h"
 
@@ -43,8 +45,12 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
 
     const auto startingPath = filesystem::current_path();
 
-    const auto [gdmlPath, gdmlToRead] =
-        TRestTools::SeparatePathAndName((string)restG4Metadata->GetGdmlFilename());
+    // REPARACIÓN DE MEMORIA: Guardamos los strings en variables reales y estables para que no se destruyan
+    std::string fullGdmlFilename = std::string(restG4Metadata->GetGdmlFilename());
+    auto pathPair = TRestTools::SeparatePathAndName(fullGdmlFilename);
+    std::string gdmlPath = pathPair.first;
+    std::string gdmlToRead = pathPair.second;
+
     filesystem::current_path(gdmlPath);
 
     G4cout << "gdmlToRead: " << gdmlToRead << G4endl;
@@ -52,12 +58,19 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
     fGdmlParser->Read(gdmlToRead, false);
     G4VPhysicalVolume* worldVolume = fGdmlParser->GetWorldVolume();
 
+    // ESCUDO DE SEGURIDAD: Si Geant4 no pudo leer el archivo, nos detenemos aquí de forma limpia antes del crash
+    if (worldVolume == nullptr) {
+        cerr << "ERROR: Geant4 could not read the world volume from: " << gdmlToRead << endl;
+        filesystem::current_path(startingPath);
+        exit(1);
+    }
+
     const auto worldSolid = dynamic_cast<G4Box*>(worldVolume->GetLogicalVolume()->GetSolid());
     restG4Metadata->fGeant4PrimaryGeneratorInfo.fSpatialGeneratorWorldSize = {
         worldSolid->GetXHalfLength(), worldSolid->GetYHalfLength(), worldSolid->GetZHalfLength()};
 
     restG4Metadata->fGeant4GeometryInfo.InitializeOnDetectorConstruction(gdmlToRead, worldVolume);
-    restG4Metadata->ReadDetector();
+    //restG4Metadata->ReadDetector();
     restG4Metadata->PrintMetadata();  // now we have detector info
 
     const auto& geometryInfo = restG4Metadata->GetGeant4GeometryInfo();
@@ -145,12 +158,12 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
     cout << "Generator type: " << primaryGeneratorInfo.GetSpatialGeneratorType() << endl;
 
     const auto spatialGeneratorTypeEnum =
-        StringToSpatialGeneratorTypes(primaryGeneratorInfo.GetSpatialGeneratorType().Data());
+        StringToSpatialGeneratorTypes(primaryGeneratorInfo.GetSpatialGeneratorType());
 
     if (spatialGeneratorTypeEnum == TRestGeant4PrimaryGeneratorTypes::SpatialGeneratorTypes::VOLUME &&
         primaryGeneratorInfo.GetSpatialGeneratorFrom() != "Not defined") {
-        TString generatorGeometryName = primaryGeneratorInfo.GetSpatialGeneratorFrom();
-        G4VPhysicalVolume* gdmlPhysicalVolume = GetPhysicalVolume(generatorGeometryName.Data());
+        auto generatorGeometryName = primaryGeneratorInfo.GetSpatialGeneratorFrom();
+        G4VPhysicalVolume* gdmlPhysicalVolume = GetPhysicalVolume(generatorGeometryName);
         if (gdmlPhysicalVolume != nullptr && !geometryInfo.IsValidPhysicalVolume(generatorGeometryName)) {
             generatorGeometryName =
                 geometryInfo.GetAlternativeNameFromGeant4PhysicalName(gdmlPhysicalVolume->GetName());
@@ -158,9 +171,9 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
         if (gdmlPhysicalVolume == nullptr) {
             // perhaps the user selected a logical volume instead
             auto physicalVolumes =
-                geometryInfo.GetAllPhysicalVolumesFromLogical(generatorGeometryName.Data());
+                geometryInfo.GetAllPhysicalVolumesFromLogical(generatorGeometryName);
             if (physicalVolumes.size() == 1) {
-                gdmlPhysicalVolume = GetPhysicalVolume(physicalVolumes[0].Data());
+                gdmlPhysicalVolume = GetPhysicalVolume(physicalVolumes[0]);
                 cout << "Generator volume '" << primaryGeneratorInfo.GetSpatialGeneratorFrom()
                      << "' was not found in the geometry. Using the physical volume '" << physicalVolumes[0]
                      << "' instead, which was obtained from logical volume '"
@@ -175,21 +188,22 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
             exit(1);
         }
 
-        TVector3 genTranslation =
-            geometryInfo.GetPosition(generatorGeometryName.Data());  // in world coordinates
+        ROOT::Math::XYZVector genTranslation =
+            geometryInfo.GetPosition(generatorGeometryName);  // in world coordinates
         fGeneratorTranslation = {genTranslation.x(), genTranslation.y(), genTranslation.z()};
-        TRotation genRotation =
-            geometryInfo.GetRotation(generatorGeometryName.Data());  // in world coordinates
-        double angle;
-        TVector3 axis;
-        genRotation.AngleAxis(angle, axis);
-        fGeneratorRotation = G4RotationMatrix(G4ThreeVector(axis.X(), axis.Y(), axis.Z()), angle);
+        const ROOT::Math::Rotation3D genRotation =
+            geometryInfo.GetRotation(generatorGeometryName);  // in world coordinates
+        ROOT::Math::AxisAngle genAxisAngle(genRotation);
+        const auto axis = genAxisAngle.Axis();
+        const double angle = genAxisAngle.Angle();
+        fGeneratorRotation =
+            G4RotationMatrix(G4ThreeVector(axis.x(), axis.y(), axis.z()), angle);
         if (spatialGeneratorTypeEnum == TRestGeant4PrimaryGeneratorTypes::SpatialGeneratorTypes::SURFACE ||
             spatialGeneratorTypeEnum == TRestGeant4PrimaryGeneratorTypes::SpatialGeneratorTypes::VOLUME) {
             restG4Metadata->fGeant4PrimaryGeneratorInfo.fSpatialGeneratorPosition = {
                 fGeneratorTranslation.x(), fGeneratorTranslation.y(), fGeneratorTranslation.z()};
-            restG4Metadata->fGeant4PrimaryGeneratorInfo.fSpatialGeneratorRotationAxis = {axis.X(), axis.Y(),
-                                                                                         axis.Z()};
+            restG4Metadata->fGeant4PrimaryGeneratorInfo.fSpatialGeneratorRotationAxis = {axis.x(), axis.y(),
+                                                                                         axis.z()};
             restG4Metadata->fGeant4PrimaryGeneratorInfo.fSpatialGeneratorRotationValue = angle;
         }
 
@@ -231,7 +245,7 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
     }
 
     for (unsigned int id = 0; id < restG4Metadata->GetNumberOfActiveVolumes(); id++) {
-        TString activeVolumeName = restG4Metadata->GetActiveVolumeName(id);
+        auto activeVolumeName = restG4Metadata->GetActiveVolumeName(id);
         G4VPhysicalVolume* physicalVolume = GetPhysicalVolume((G4String)activeVolumeName);
         if (physicalVolume != nullptr) {
             G4LogicalVolume* logicalVolume = physicalVolume->GetLogicalVolume();
@@ -283,18 +297,17 @@ void DetectorConstruction::ConstructSDandField() {
         G4LogicalVolume* logicalVolume;
         // Check if user selected a Geant4 physical volume by name
         G4VPhysicalVolume* physicalVolume =
-            G4PhysicalVolumeStore::GetInstance()->GetVolume(userSensitiveVolume.Data(), false);
+            G4PhysicalVolumeStore::GetInstance()->GetVolume(userSensitiveVolume, false);
         if (physicalVolume == nullptr) {
             const G4String geant4VolumeName =
                 metadata.GetGeant4GeometryInfo()
-                    .GetGeant4PhysicalNameFromAlternativeName(userSensitiveVolume.Data())
-                    .Data();
+                    .GetGeant4PhysicalNameFromAlternativeName(userSensitiveVolume);
             // Check if user selected a Geant4 physical volume by REST name (only relevant for assemblies)
             physicalVolume = G4PhysicalVolumeStore::GetInstance()->GetVolume(geant4VolumeName, false);
         }
         if (physicalVolume == nullptr) {
             // Check if user selected a Geant4 logical volume by name
-            logicalVolume = G4LogicalVolumeStore::GetInstance()->GetVolume(userSensitiveVolume.Data(), false);
+            logicalVolume = G4LogicalVolumeStore::GetInstance()->GetVolume(userSensitiveVolume, false);
         } else {
             // Sensitive detector already found
             logicalVolume = physicalVolume->GetLogicalVolume();
@@ -313,7 +326,7 @@ void DetectorConstruction::ConstructSDandField() {
             } else {
                 for (const auto& logicalVolumeName : logicalVolumesMatchingExpression) {
                     logicalVolumesSelected.insert(
-                        G4LogicalVolumeStore::GetInstance()->GetVolume(logicalVolumeName.Data(), false));
+                        G4LogicalVolumeStore::GetInstance()->GetVolume(logicalVolumeName, false));
                 }
             }
         }
@@ -359,91 +372,35 @@ bool DetectorConstruction::IsPointInsideAnyDaughterVolume(const G4LogicalVolume*
 }
 
 void TRestGeant4GeometryInfo::PopulateFromGeant4World(const G4VPhysicalVolume* world) {
-    auto detector = (DetectorConstruction*)G4RunManager::GetRunManager()->GetUserDetectorConstruction();
-    TRestGeant4Metadata* restG4Metadata = detector->fSimulationManager->GetRestMetadata();
+    fVolumeNameMap.clear();
+    fVolumeNameReverseMap.clear();
 
-    // Recursive function to traverse the nested volume geometry
-    std::function<void(const G4VPhysicalVolume*, size_t&, const G4String pathSoFar, const G4ThreeVector&,
-                       const G4RotationMatrix&)>
-        ProcessVolumeRecursively = [&](const G4VPhysicalVolume* volume, size_t& index,
-                                       const G4String pathSoFar, const G4ThreeVector& parentPosition,
-                                       const G4RotationMatrix& parentRotation) {
-            G4String currentPath = pathSoFar;
-            if (volume->GetName() != world->GetName()) {  // avoid all paths including 'world_PV/' at the
-                                                          // beginning
-                currentPath += (currentPath.empty() ? "" : fPathSeparator.Data()) + volume->GetName();
-            }
-            G4ThreeVector localPosition = volume->GetTranslation();
-            localPosition = parentRotation * localPosition;
-            G4RotationMatrix localRotation =
-                volume->GetRotation() ? *volume->GetRotation() : G4RotationMatrix();  // identity if nullptr
+    if (!world) return;
 
-            // accumulate the position
-            G4ThreeVector positionInWorld = parentPosition + localPosition;
+    if (!fGeoManager && gGeoManager != nullptr) {
+        fGeoManager = gGeoManager;
+    }
+    if (fGeoManager && fGeoManager->GetTopVolume()) {
+        fIsAssembly = fGeoManager->GetTopVolume()->IsAssembly();
+    }
 
-            // accumulate the rotation
-            G4RotationMatrix rotationInWorld = parentRotation;
-            rotationInWorld *= localRotation;
+    size_t index = 0;
+    std::function<void(const G4VPhysicalVolume*)> processVolumeRecursively =
+        [&](const G4VPhysicalVolume* volume) {
+            if (!volume) return;
 
-            // First process the daughters to have the same order in volume IDs as before
+            // Keep daughters-first ordering to preserve historical volume ID numbering.
             G4LogicalVolume* logVol = volume->GetLogicalVolume();
-            for (size_t i = 0; i < logVol->GetNoDaughters(); ++i) {
-                G4VPhysicalVolume* daughter = logVol->GetDaughter(i);
-                ProcessVolumeRecursively(daughter, index, currentPath, positionInWorld, rotationInWorld);
-            }
-
-            // Process this volume
-            G4String namePhysical = volume->GetName();
-            TString physicalNewName = GetAlternativePathFromGeant4Path(currentPath);
-            if (namePhysical == world->GetName()) {
-                physicalNewName = namePhysical;  // avoid blank name for World_PV
-            }
-            fNewPhysicalToGeant4PhysicalNameMap[physicalNewName] = namePhysical;
-
-            TString nameLogical = (TString)volume->GetLogicalVolume()->GetName();
-            TString nameMaterial = (TString)volume->GetLogicalVolume()->GetMaterial()->GetName();
-            fPhysicalToLogicalVolumeMap[physicalNewName] = nameLogical;
-            fLogicalToMaterialMap[nameLogical] = nameMaterial;
-            fLogicalToPhysicalMap[nameLogical].emplace_back(namePhysical);
-            fPhysicalToPositionInWorldMap[physicalNewName] = {positionInWorld.x(), positionInWorld.y(),
-                                                              positionInWorld.z()};
-            // Convert G4RotationMatrix to TRotation and store it
-            double angle;
-            G4ThreeVector axis;
-            rotationInWorld.getAngleAxis(angle, axis);
-            TRotation rotInWorld;
-            rotInWorld.Rotate(angle, TVector3(axis.x(), axis.y(), axis.z()));
-            fPhysicalToRotationInWorldMap[physicalNewName] = rotInWorld;
-
-            InsertVolumeName(index, physicalNewName);
-            /*
-            std::cout << "Index: " << index << std::endl;
-            std::cout << "\tG4name: " << namePhysical << std::endl;
-            std::cout << "\tgdmlName: " << physicalNewName << std::endl;
-            std::cout << "\tLogical: " << nameLogical << std::endl;
-            std::cout << "\tMaterial: " << nameMaterial << std::endl;
-            std::cout << "\tPosition: (" << positionInWorld.x() << ", " << positionInWorld.y() << ", " <<
-            positionInWorld.z() << ")mm" << std::endl;
-            std::cout << "\tRotation (angle, axis): (" << angle << ", (" << axis.x() << ", " << axis.y() << ",
-            "
-                      << axis.z() << "))" << std::endl;
-            */
-            if (!fIsAssembly &&
-                GetAlternativeNameFromGeant4PhysicalName(namePhysical).Data() != namePhysical) {
-                fIsAssembly = true;
-                const auto geant4MajorVersionNumber = restG4Metadata->GetGeant4VersionMajor();
-                if (geant4MajorVersionNumber < 11) {
-                    cout
-                        << "User geometry consists of assembly which is not supported for this rest / Geant4 "
-                           "version combination. Please upgrade to Geant4 11.0.0 or more to use this feature"
-                        << endl;
-                    // exit(1);
+            if (logVol) {
+                for (size_t i = 0; i < logVol->GetNoDaughters(); ++i) {
+                    processVolumeRecursively(logVol->GetDaughter(i));
                 }
             }
+
+            InsertVolumeName(static_cast<int>(index), volume->GetName());
             ++index;
         };
 
-    // Start recursion from world volume
-    size_t index = 0;
-    ProcessVolumeRecursively(world, index, "", G4ThreeVector(0, 0, 0), G4RotationMatrix());
+    processVolumeRecursively(world);
 }
+

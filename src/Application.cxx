@@ -2,11 +2,12 @@
 #include "Application.h"
 
 #include <TGeoManager.h>
+#include <TKey.h>
 #include <TObjArray.h>
 #include <TObjString.h>
 #include <TPRegexp.h>
 #include <TROOT.h>
-#include <TRestGDMLParser.h>
+#include <TRestGeant4Manager.h>
 #include <TRestGeant4Metadata.h>
 #include <TRestGeant4PhysicsLists.h>
 #include <TRestRun.h>
@@ -15,7 +16,6 @@
 #ifndef GEANT4_WITHOUT_G4RunManagerFactory
 #include <G4RunManagerFactory.hh>
 #endif
-#include <TRestGeant4ParticleSourceCosmics.h>
 
 #include <G4UImanager.hh>
 #include <G4VSteppingVerbose.hh>
@@ -296,9 +296,9 @@ void Application::Run(const CommandLineOptions::Options& options) {
     CommandLineOptions::PrintOptions(options);
 
     // Separating relative path and pure RML filename
-    const char* inputConfigFile = options.rmlFile.c_str();
+    std::string inputConfigFile = options.rmlFile.c_str();
 
-    if (!TRestTools::CheckFileIsAccessible(inputConfigFile)) {
+    if (!TRestTools::fileExists(inputConfigFile)) {
         cerr << "Input RML file " << filesystem::weakly_canonical(inputConfigFile)
              << " not found, please check file name!" << endl;
         exit(1);
@@ -310,10 +310,28 @@ void Application::Run(const CommandLineOptions::Options& options) {
         filesystem::current_path(inputRmlPath);
     }
 
-    auto metadata = new TRestGeant4Metadata(inputRmlClean.c_str());
-    fSimulationManager.SetRestMetadata(metadata);
+    auto fConfig = TRestTools::OpenConfigFile(inputRmlClean);
+    auto findNode = TRestTools::GetMetadataClass(fConfig,"TRestGeant4Manager");
+    if (!findNode.second.IsDefined()) {
+        std::cout << "Error: TRestGeant4Manager not found in input file " << inputRmlClean << std::endl;
+        exit(1);
+    }
+    std::cout<<"G4Manager found "<<std::endl;
+    auto* g4Manager = new TRestGeant4Manager(findNode.first, findNode.second);
+    g4Manager->PrintMetadata();
 
-    metadata->SetGeant4Version(TRestTools::Execute("geant4-config --version"));
+    g4Manager->fG4Metadata->PrintMetadata();
+
+    auto metadata = g4Manager->fG4Metadata;
+    if (metadata == nullptr) {
+        std::cerr << "ERROR: TRestGeant4Metadata is null, check cfg file." << std::endl;
+        exit(1);
+    }
+
+    fSimulationManager.SetRestMetadata(metadata);
+    metadata->PrintMetadata();
+
+    std::cout<<"G4Metadata retreived "<<std::endl;
 
     if (options.seed != 0) {
         metadata->SetSeed(options.seed);
@@ -335,31 +353,33 @@ void Application::Run(const CommandLineOptions::Options& options) {
         metadata->SetGdmlFilename(options.geometryFile);
     }
 
-    // We need to process and generate a new GDML for several reasons.
-    // 1. ROOT6 has problem loading math expressions in gdml file
-    // 2. We allow file entities to be http remote files
-    // 3. We retrieve the GDML and materials versions and associate to the
-    // corresponding TRestGeant4Metadata members
-    // 4. We support the use of system variables ${}
-    auto gdml = new TRestGDMLParser();
+        std::string gdmlPath = metadata->GetGdmlFilename();
 
-    // This call will generate a new single file GDML output
-    gdml->Load((string)metadata->GetGdmlFilename());
+    // Check if the file exists locally; if not, look for it using the geometry paths registry
+    if (!TRestTools::fileExists(gdmlPath)) {
+        std::vector<std::string> searchPaths = { "./", metadata->GetGeometryPath() };
+        std::string foundPath = TRestTools::SearchFileInPath(searchPaths, gdmlPath);
+        if (!foundPath.empty()) {
+            gdmlPath = foundPath;
+        } else {
+            std::cerr << "ERROR: GDML file '" << gdmlPath 
+                      << "' was not found locally nor in geometryPath: " << metadata->GetGeometryPath() << std::endl;
+            exit(1);
+        }
+    }
 
-    // We redefine the value of the GDML file to be used in DetectorConstructor.
-    metadata->SetGdmlFilename(gdml->GetOutputGDMLFile());
+    // Update metadata members with the definitive resolved paths for proper logging and storage
+    metadata->SetGdmlFilename(gdmlPath);
     metadata->SetGeometryPath("");
 
-    metadata->SetGdmlReference(gdml->GetGDMLVersion());
-    metadata->SetMaterialsReference(gdml->GetEntityVersion("materials"));
+    // Register deterministic tracking references using framework file hashes
+    metadata->SetGdmlReference(TRestTools::GetFullPath(gdmlPath));
+    metadata->SetMaterialsReference(TRestTools::GetFullPath(gdmlPath));
 
-    auto physicsLists = new TRestGeant4PhysicsLists(inputRmlClean.c_str());
-    fSimulationManager.SetRestPhysicsLists(physicsLists);
+    fSimulationManager.SetRestPhysicsLists(g4Manager->fG4PhysicsLists);
 
-    auto run = new TRestRun();
+    auto run = g4Manager->fConfiguredRun;
     fSimulationManager.SetRestRun(run);
-
-    run->LoadConfigFromFile(inputRmlClean);
 
     if (options.runNumber >= 0) {
         run->SetRunNumber(options.runNumber);
@@ -371,33 +391,30 @@ void Application::Run(const CommandLineOptions::Options& options) {
 
     filesystem::current_path(originalDirectory);
 
-    TString runTag = run->GetRunTag();
+    auto runTag = run->GetRunTag();
     if (runTag == "Null" || runTag == "") {
-        run->SetRunTag(metadata->GetTitle());
+        run->SetRunTag(run->GetName());
     }
 
     run->SetRunType("restG4");
 
-    run->AddMetadata(fSimulationManager.GetRestMetadata());
-    run->AddMetadata(fSimulationManager.GetRestPhysicsLists());
+    //run->AddMetadata(fSimulationManager.GetRestMetadata());
+    //run->AddMetadata(fSimulationManager.GetRestPhysicsLists());
     run->PrintMetadata();
 
     run->FormOutputFile();
-    if (run->GetOutputFile() == nullptr || !run->GetOutputFile()->IsWritable()) {
+    if (run->fOutputFile == nullptr || !run->fOutputFile->IsWritable()) {
         cerr << "Problem writing output file '" << run->GetOutputFileName()
              << "'. Perhaps location does not exist or is not writable?" << endl;
         exit(1);
     }
-    run->GetOutputFile()->cd();
-
-    run->AddEventBranch(&fSimulationManager.fEvent);
+    run->RegisterEvent<TRestGeant4Event>("TRestGeant4Event", fSimulationManager.fEvent);
 
     // choose the Random engine
     CLHEP::HepRandom::setTheEngine(new CLHEP::RanecuEngine);
     long seed = metadata->GetSeed();
     CLHEP::HepRandom::setTheSeed(seed);
 
-    G4VSteppingVerbose::SetInstance(new SteppingVerbose(&fSimulationManager));
 
 #ifndef GEANT4_WITHOUT_G4RunManagerFactory
     auto runManagerType = G4RunManagerType::Default;
@@ -431,12 +448,22 @@ void Application::Run(const CommandLineOptions::Options& options) {
 
     runManager->Initialize();
 
+    // Import the pre-validated path. This automatically initializes ROOT's native 'gGeoManager' global pointer
+    TGeoManager::Import(gdmlPath.c_str());
+    
+    if (gGeoManager == nullptr) {
+        std::cerr << "ERROR: ROOT engine failed to initialize gGeoManager from valid path: " << gdmlPath << std::endl;
+        exit(1);
+    }
+
     G4UImanager* UI = G4UImanager::GetUIpointer();
 
 #ifdef G4VIS_USE
     G4VisManager* visManager = new G4VisExecutive;
     visManager->Initialize();
 #endif
+    const std::string g4Version = runManager->GetVersionString().data();
+    metadata->SetGeant4Version(g4Version);
 
     const auto nEvents = metadata->GetNumberOfEvents();
     if (nEvents < 0) {
@@ -445,12 +472,10 @@ void Application::Run(const CommandLineOptions::Options& options) {
     }
 
     time_t systime = time(nullptr);
-    run->SetStartTimeStamp((Double_t)systime);
+    run->SetStartTimeStamp((double)systime);
 
-    run->UpdateOutputFile();
 
     cout << "Writing geometry" << endl;
-    gdml->CreateGeoManager();
     if (!gGeoManager) {
         cout << "Writing geometry - Error - Unable to write geometry (geometry not found)" << endl;
         exit(1);
@@ -477,7 +502,7 @@ void Application::Run(const CommandLineOptions::Options& options) {
 #endif
     }
 
-    run->GetOutputFile()->cd();
+    run->fOutputFile->cd();
 
 #ifdef G4VIS_USE
     delete visManager;
@@ -488,13 +513,13 @@ void Application::Run(const CommandLineOptions::Options& options) {
 
     systime = time(nullptr);
     run->SetEndTimeStamp((Double_t)systime);
-    const string filename = TRestTools::ToAbsoluteName(run->GetOutputFileName().Data());
+    const string filename = TRestTools::GetFullPath(run->GetOutputFileName());
 
     const auto nEntries = run->GetEntries();
 
     metadata->SetSimulationWallTime(fSimulationManager.GetElapsedTime());
 
-    if (metadata->GetNumberOfSources() == 1 &&
+/*    if (metadata->GetNumberOfSources() == 1 &&
         string(metadata->GetParticleSource(0)->GetName()) == "TRestGeant4ParticleSourceCosmics") {
         auto source = dynamic_cast<TRestGeant4ParticleSourceCosmics*>(metadata->GetParticleSource(0));
         auto histogramsTransformed = source->GetHistogramsTransformed();
@@ -515,11 +540,16 @@ void Application::Run(const CommandLineOptions::Options& options) {
         cout << " - Counts per second (wall time): "
              << double(run->GetEntries()) / fSimulationManager.GetElapsedTime() << endl;
     }
-
+*/
     metadata->SetSimulationWallTime(fSimulationManager.GetElapsedTime());
 
-    run->UpdateOutputFile();
-    run->CloseFile();
+    run->AddMetadata(run->GetName(), run->GetYAMLNode());
+    run->AddMetadata(fSimulationManager.GetRestMetadata()->GetName(), fSimulationManager.GetRestMetadata()->GetYAMLNode());
+    run->AddMetadata(fSimulationManager.GetRestPhysicsLists()->GetName(), fSimulationManager.GetRestPhysicsLists()->GetYAMLNode());
+    //Add more?
+
+    //run->UpdateOutputFile();
+    run->CloseFiles();
 
     run->PrintMetadata();
 
@@ -529,7 +559,7 @@ void Application::Run(const CommandLineOptions::Options& options) {
     // Do some checks
     ValidateOutputFile(filename);
 
-    cout << "\n\t- Total simulation time is " << ToTimeStringLong(fSimulationManager.GetElapsedTime()) << ", "
+    cout << "\n\t- Total simulation time is " << TRestTools::ToTimeStringLong(fSimulationManager.GetElapsedTime()) << ", "
          << nEventsAtEnd << " processed events ("
          << double(nEventsAtEnd) / fSimulationManager.GetElapsedTime() << " per second) and " << nEntries
          << " events saved to output file (" << double(nEntries) / fSimulationManager.GetElapsedTime()
@@ -540,19 +570,21 @@ void Application::Run(const CommandLineOptions::Options& options) {
 void Application::ValidateOutputFile(const string& filename) {
     bool error = false;
 
-    const auto run = TRestRun(filename);
-    const auto file = run.GetInputFile();
+    auto run = TRestRun(filename);
+    auto file = run.fInputFile.get();
     if (file == nullptr) {
         cerr << "Output file not found" << endl;
         exit(1);
     }
 
-    const auto eventTree = run.GetEventTree();
+    TRestEvent& restEvent = run.GetInputEvent("TRestGeant4Event");
+    TRestGeant4Event* eventTree = dynamic_cast<TRestGeant4Event*>(&restEvent);
+
     if (eventTree == nullptr) {
         error = true;
         cerr << "'EventTree' not found in output file" << endl;
     }
-    const auto analysisTree = run.GetAnalysisTree();
+    const auto analysisTree = run.fAnalysisTree;
     if (analysisTree == nullptr) {
         error = true;
         cerr << "'AnalysisTree' not found in output file" << endl;
@@ -564,21 +596,29 @@ void Application::ValidateOutputFile(const string& filename) {
         cerr << "Geometry not found in output file" << endl;
     }
 
-    map<string, int> metadataCount;
-    for (const auto& obj : *file->GetListOfKeys()) {
-        const auto key = dynamic_cast<TKey*>(obj);
-        metadataCount[key->GetClassName()]++;
+        if (!run.GetMetadata("run")) {
+        error = true;
+        cerr << "'run' metadata not found in output file" << endl;
     }
-    for (const auto name : {"TRestGeant4Metadata", "TRestGeant4PhysicsLists", "TRestRun", "TRestAnalysisTree",
-                            "TGeoManager", "TTree"}) {
-        if (metadataCount[name] != 1) {
-            error = true;
-            if (metadataCount[name] <= 0) {
-                cerr << "'" << name << "' not found in output file" << endl;
-            } else {
-                cerr << "Multiple instances of '" << name << "' in the same output file" << endl;
-            }
-        }
+    if (!run.GetMetadata("geant4Metadata")) {
+        error = true;
+        cerr << "'geant4Metadata' metadata not found in output file" << endl;
+    }
+    if (!run.GetMetadata("physicsLists")) {
+        error = true;
+        cerr << "'physicsLists' metadata not found in output file" << endl;
+    }
+    if (!file->Get<TTree>("TRestGeant4Event")) {
+        error = true;
+        cerr << "'TRestGeant4Event' tree not found in output file" << endl;
+    }
+    if (!file->Get<TTree>("AnalysisTree")) {
+        error = true;
+        cerr << "'AnalysisTree' tree not found in output file" << endl;
+    }
+    if (!file->Get<TGeoManager>("Geometry")) {
+        error = true;
+        cerr << "'Geometry' not found in output file" << endl;
     }
     if (error) {
         file->ls();

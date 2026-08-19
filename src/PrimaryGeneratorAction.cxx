@@ -3,8 +3,8 @@
 
 #include <TF1.h>
 #include <TF2.h>
+#include <TH2D.h>
 #include <TRestGeant4Metadata.h>
-#include <TRestGeant4ParticleSourceCosmics.h>
 #include <TRestGeant4PrimaryGeneratorInfo.h>
 
 #include <G4Event.hh>
@@ -53,13 +53,13 @@ PrimaryGeneratorAction::PrimaryGeneratorAction(SimulationManager* simulationMana
     TRestGeant4ParticleSource* source = restG4Metadata->GetParticleSource(0);
 
     const auto& primaryGeneratorInfo = restG4Metadata->GetGeant4PrimaryGeneratorInfo();
-    const string& spatialGeneratorTypeName = primaryGeneratorInfo.GetSpatialGeneratorType().Data();
+    const string& spatialGeneratorTypeName = primaryGeneratorInfo.GetSpatialGeneratorType();
     //   const auto spatialGeneratorTypeEnum = StringToSpatialGeneratorTypes(spatialGeneratorTypeName);
 
-    const string angularDistTypeName = source->GetAngularDistributionType().Data();
+    const string angularDistTypeName = source->GetAngularDistributionType();
     const auto angularDistTypeEnum = StringToAngularDistributionTypes(angularDistTypeName);
 
-    const string energyDistTypeName = source->GetEnergyDistributionType().Data();
+    const string energyDistTypeName = source->GetEnergyDistributionType();
     const auto energyDistTypeEnum = StringToEnergyDistributionTypes(energyDistTypeName);
 
     fRandom = new TRandom(restG4Metadata->GetSeed() + TRandom(G4Threading::G4GetThreadId()).Integer(1E9));
@@ -231,13 +231,13 @@ void PrimaryGeneratorAction::SetGeneratorSpatialDensity(TString str) {
     fGeneratorSpatialDensityFunction = new TF3("GeneratorDistFunc", str);
 }
 
-TVector2 PointOnUnitDisk() {
+pair<double,double> PointOnUnitDisk() {
     double r = TMath::Sqrt(G4UniformRand());
     double theta = G4UniformRand() * 2 * TMath::Pi();
     return {r * TMath::Cos(theta), r * TMath::Sin(theta)};
 }
 
-pair<bool, TVector3> IntersectionLineSphere(const TVector3& lineOrigin, const TVector3& lineDirection) {
+pair<bool, ROOT::Math::XYZVector> IntersectionLineSphere(const ROOT::Math::XYZVector& lineOrigin, const ROOT::Math::XYZVector& lineDirection) {
     // sphere origin is always (0,0)
     // return the first intersection point
     // https://en.wikipedia.org/wiki/Line%E2%80%93sphere_intersection
@@ -264,112 +264,23 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
     auto simulationManager = fSimulationManager;
     TRestGeant4Metadata* restG4Metadata = simulationManager->GetRestMetadata();
 
-    if (restG4Metadata->GetVerboseLevel() >= TRestStringOutput::REST_Verbose_Level::REST_Debug) {
+    if (restG4Metadata->GetVerboseLevel() >= TRestLogManager::REST_Verbose_Level::REST_Debug) {
         cout << "DEBUG: Primary generation" << endl;
     }
     // We have to initialize here and not in start of the event because
     // GeneratePrimaries is called first, and we want to store event origin and position inside
     // we should have already written the information from previous event to disk (in endOfEventAction)
 
-    if (restG4Metadata->GetNumberOfSources() == 1 &&
-        string(restG4Metadata->GetParticleSource(0)->GetName()) == "TRestGeant4ParticleSourceCosmics") {
-        // This block is the cosmic generator
-
-        auto source = dynamic_cast<TRestGeant4ParticleSourceCosmics*>(restG4Metadata->GetParticleSource(0));
-
-        // rml source and generator must both be "cosmic", otherwise raise an exception
-        if (string(restG4Metadata->GetGeant4PrimaryGeneratorInfo().GetSpatialGeneratorType().Data()) !=
-            "Cosmic") {
-            cerr << "PrimaryGeneratorAction - ERROR: cosmic generator only supports cosmic type: "
-                 << restG4Metadata->GetGeant4PrimaryGeneratorInfo().GetSpatialGeneratorType().Data() << endl;
-            exit(1);
-        }
-
-        // update particle with energy and momentum from input histogram. The input histogram zenith component
-        // is multiplied by sec(zenith) to account for geometric effect.
-        source->Update();
-
-        const auto particle = source->GetParticles().at(0);
-
-        fParticleGun.SetParticleDefinition(
-            G4ParticleTable::GetParticleTable()->FindParticle(particle.GetParticleName().Data()));
-
-        // radius of the disk used in sampling. A sphere with this radius will contain the whole geometry
-        if (fCosmicCircumscribedSphereRadius == 0.) {
-            fCosmicCircumscribedSphereRadius = fSimulationManager->GetRestMetadata()
-                                                   ->GetGeant4PrimaryGeneratorInfo()
-                                                   .GetSpatialGeneratorCosmicRadius();  // radius in mm
-        }
-        const G4ThreeVector referenceDirection = {0, -1, 0};
-        const auto& direction = particle.GetMomentumDirection();
-        // Compute zenith angle between Y axis and direction of the incoming particle.
-        const double zenith = TMath::ACos(
-            direction.Dot({referenceDirection.x(), referenceDirection.y(), referenceDirection.z()}));
-
-        // Uniform sampling in an ellipse
-        const TVector2 positionOnDisk = PointOnUnitDisk();  // unit disk
-        const TVector2 positionOnEllipse = {positionOnDisk.X() / TMath::Cos(zenith) + TMath::Tan(zenith),
-                                            positionOnDisk.Y()};
-
-        // Rotate the point generated in the ellipse according phi angle
-        double phi = TVector2(direction.X(), direction.Z()).Phi();
-        const TVector2 positionOnEllipseRotated = {
-            positionOnEllipse.X() * TMath::Cos(phi) - positionOnEllipse.Y() * TMath::Sin(phi),
-            positionOnEllipse.X() * TMath::Sin(phi) + positionOnEllipse.Y() * TMath::Cos(phi),
-        };
-        const TVector3 positionOrigin = {
-            -1 * positionOnEllipseRotated.X(),
-            1.0,
-            -1 * positionOnEllipseRotated.Y(),
-        };
-        // find intersection point with the unit sphere
-        auto [intersectionFlag, intersection] = IntersectionLineSphere(positionOrigin, direction);
-        if (!intersectionFlag) {
-            cerr << "PrimaryGeneratorAction - ERROR: cosmic generator failed to find intersection. This "
-                    "could happen very rarely. If it happens often, it's a bug."
-                 << endl;
-            intersection = positionOrigin;  // just use the origin position (this should almost never happen)
-        }
-
-        fParticleGun.SetParticleEnergy(particle.GetEnergy() * keV);
-
-        G4ThreeVector particlePosition = {
-            intersection.X() * fCosmicCircumscribedSphereRadius,
-            intersection.Y() * fCosmicCircumscribedSphereRadius,
-            intersection.Z() * fCosmicCircumscribedSphereRadius,
-        };
-        G4ThreeVector sourceDirection = {source->GetDirection().X(), source->GetDirection().Y(),
-                                         source->GetDirection().Z()};
-        G4ThreeVector particleDirection = {direction.X(), direction.Y(), direction.Z()};
-
-        const double angleBetweenDirections = sourceDirection.angle(referenceDirection);
-        if (angleBetweenDirections > 0) {
-            const G4ThreeVector cross = referenceDirection.cross(sourceDirection);
-            particleDirection.rotate(angleBetweenDirections, cross);
-            particlePosition.rotate(angleBetweenDirections, cross);
-        }
-
-        fParticleGun.SetParticleMomentumDirection(particleDirection);
-        fParticleGun.SetParticlePosition(particlePosition);
-
-        std::chrono::duration<double, std::milli> elapsed = std::chrono::high_resolution_clock::now() - start;
-
-        outputManager->SetEventTimeWallPrimaryGeneration(elapsed.count() / 1000.);
-
-        fParticleGun.GeneratePrimaryVertex(event);
-
-        return;
-    }
 
     for (int i = 0; i < restG4Metadata->GetNumberOfSources(); i++) {
         restG4Metadata->GetParticleSource(i)->Update();
     }
 
     const auto& primaryGeneratorInfo = restG4Metadata->GetGeant4PrimaryGeneratorInfo();
-    const string& spatialGeneratorTypeName = primaryGeneratorInfo.GetSpatialGeneratorType().Data();
+    const string& spatialGeneratorTypeName = primaryGeneratorInfo.GetSpatialGeneratorType();
     const auto spatialGeneratorTypeEnum = StringToSpatialGeneratorTypes(spatialGeneratorTypeName);
     const auto spatialGeneratorShapeEnum =
-        StringToSpatialGeneratorShapes(primaryGeneratorInfo.GetSpatialGeneratorShape().Data());
+        StringToSpatialGeneratorShapes(primaryGeneratorInfo.GetSpatialGeneratorShape());
     // Apparently not used. I comment to avoid compilation warning
     // Int_t nParticles = restG4Metadata->GetNumberOfSources();
 
@@ -436,7 +347,7 @@ G4ParticleDefinition* PrimaryGeneratorAction::SetParticleDefinition(Int_t partic
 
     Int_t charge = particle.GetParticleCharge();
 
-    if (restG4Metadata->GetVerboseLevel() >= TRestStringOutput::REST_Verbose_Level::REST_Debug) {
+    if (restG4Metadata->GetVerboseLevel() >= TRestLogManager::REST_Verbose_Level::REST_Debug) {
         cout << "DEBUG: Particle name: " << particleName << endl;
         cout << "DEBUG: Particle excited energy: " << excitedEnergy << " keV" << endl;
     }
@@ -481,32 +392,28 @@ void PrimaryGeneratorAction::SetParticleDirection(Int_t particleSourceIndex,
 
     const auto& primaryGeneratorInfo = restG4Metadata->GetGeant4PrimaryGeneratorInfo();
 
-    const string& spatialGeneratorTypeName = primaryGeneratorInfo.GetSpatialGeneratorType().Data();
+    const string& spatialGeneratorTypeName = primaryGeneratorInfo.GetSpatialGeneratorType();
     const auto spatialGeneratorTypeEnum = StringToSpatialGeneratorTypes(spatialGeneratorTypeName);
     const auto spatialGeneratorShapeEnum =
-        StringToSpatialGeneratorShapes(primaryGeneratorInfo.GetSpatialGeneratorShape().Data());
+        StringToSpatialGeneratorShapes(primaryGeneratorInfo.GetSpatialGeneratorShape());
 
     if (spatialGeneratorTypeEnum == SpatialGeneratorTypes::SURFACE &&
         spatialGeneratorShapeEnum == SpatialGeneratorShapes::SPHERE) {
         SetParticlePosition();
 
-        const TVector3 sourcePositionReference = {0, 0, 0};  // TODO: use the source position
-        const TVector3 particlePosition = {fParticleGun.GetParticlePosition().x(),
+        const ROOT::Math::XYZVector sourcePositionReference = {0, 0, 0};  // TODO: use the source position
+        const ROOT::Math::XYZVector particlePosition = {fParticleGun.GetParticlePosition().x(),
                                            fParticleGun.GetParticlePosition().y(),
                                            fParticleGun.GetParticlePosition().z()};
 
-        const TVector3 directionSphere = (sourcePositionReference - particlePosition).Unit();
+        const ROOT::Math::XYZVector directionSphere = (sourcePositionReference - particlePosition).Unit();
         direction = {directionSphere.X(), directionSphere.Y(), directionSphere.Z()};
     }
 
-    const TVector3 particlePosition = {fParticleGun.GetParticlePosition().x(),
-                                       fParticleGun.GetParticlePosition().y(),
-                                       fParticleGun.GetParticlePosition().z()};
-
-    const string angularDistTypeName = source->GetAngularDistributionType().Data();
+    const string angularDistTypeName = source->GetAngularDistributionType();
     const auto angularDistTypeEnum = StringToAngularDistributionTypes(angularDistTypeName);
 
-    if (restG4Metadata->GetVerboseLevel() >= TRestStringOutput::REST_Verbose_Level::REST_Debug) {
+    if (restG4Metadata->GetVerboseLevel() >= TRestLogManager::REST_Verbose_Level::REST_Debug) {
         cout << "DEBUG: Angular distribution: " << angularDistTypeName << endl;
     }
 
@@ -559,13 +466,13 @@ void PrimaryGeneratorAction::SetParticleDirection(Int_t particleSourceIndex,
         direction.rotate(G4UniformRand() * 2 * M_PI, referenceOrigin);
 
     } else if (angularDistTypeEnum == AngularDistributionTypes::FLUX) {
-        const TVector3& v = particle.GetMomentumDirection().Unit();
+        const ROOT::Math::XYZVector& v = particle.GetMomentumDirection().Unit();
         direction.set(v.X(), v.Y(), v.Z());
 
     } else if (angularDistTypeEnum == AngularDistributionTypes::BACK_TO_BACK) {
         // This should never crash. In TRestG4Metadata we have defined that if the
         // first source is back to back we set it to isotropic
-        // TVector3 v = restG4Event->GetPrimaryEventDirection(particleSourceIndex - 1);
+        // ROOT::Math::XYZVector v = restG4Event->GetPrimaryEventDirection(particleSourceIndex - 1);
         // v = v.Unit();
         //
         G4cout << "Back to Back is not implemented now. particleSourceIndex: " << particleSourceIndex
@@ -591,14 +498,14 @@ void PrimaryGeneratorAction::SetParticleEnergy(Int_t particleSourceIndex,
     // const auto& primaryGeneratorInfo = restG4Metadata->GetGeant4PrimaryGeneratorInfo();
 
     const string angularDistTypeName =
-        restG4Metadata->GetParticleSource(particleSourceIndex)->GetAngularDistributionType().Data();
+        restG4Metadata->GetParticleSource(particleSourceIndex)->GetAngularDistributionType();
     const auto angularDistTypeEnum = StringToAngularDistributionTypes(angularDistTypeName);
 
     const string energyDistTypeName =
-        restG4Metadata->GetParticleSource(particleSourceIndex)->GetEnergyDistributionType().Data();
+        restG4Metadata->GetParticleSource(particleSourceIndex)->GetEnergyDistributionType();
     const auto energyDistTypeEnum = StringToEnergyDistributionTypes(energyDistTypeName);
 
-    if (restG4Metadata->GetVerboseLevel() >= TRestStringOutput::REST_Verbose_Level::REST_Debug) {
+    if (restG4Metadata->GetVerboseLevel() >= TRestLogManager::REST_Verbose_Level::REST_Debug) {
         cout << "DEBUG: Energy distribution: " << energyDistTypeName << endl;
     }
 
@@ -607,14 +514,14 @@ void PrimaryGeneratorAction::SetParticleEnergy(Int_t particleSourceIndex,
     if (energyDistTypeEnum == EnergyDistributionTypes::MONO) {
         energy = particle.GetEnergy() * keV;
     } else if (energyDistTypeEnum == EnergyDistributionTypes::FLAT) {
-        TVector2 enRange =
+        auto enRange =
             restG4Metadata->GetParticleSource(particleSourceIndex)->GetEnergyDistributionRange();
-        energy = ((enRange.Y() - enRange.X()) * G4UniformRand() + enRange.X()) * keV;
+        energy = ((enRange.first - enRange.second) * G4UniformRand() + enRange.first) * keV;
     } else if (energyDistTypeEnum == EnergyDistributionTypes::LOG) {
-        TVector2 enRange =
+        auto enRange =
             restG4Metadata->GetParticleSource(particleSourceIndex)->GetEnergyDistributionRange();
-        auto max_energy = enRange.Y() * keV;
-        auto min_energy = enRange.X() * keV;
+        auto max_energy = enRange.first * keV;
+        auto min_energy = enRange.second * keV;
         energy = exp((log(max_energy) - log(min_energy)) * G4UniformRand() + log(min_energy));
 
     } else if (energyDistTypeEnum == EnergyDistributionTypes::TH1D) {
@@ -653,7 +560,7 @@ void PrimaryGeneratorAction::SetParticleEnergy(Int_t particleSourceIndex,
     }
     fParticleGun.SetParticleEnergy(energy);
 
-    if (restG4Metadata->GetVerboseLevel() >= TRestStringOutput::REST_Verbose_Level::REST_Debug) {
+    if (restG4Metadata->GetVerboseLevel() >= TRestLogManager::REST_Verbose_Level::REST_Debug) {
         cout << "DEBUG: Particle energy: " << energy / keV << " keV" << endl;
     }
 }
@@ -664,10 +571,10 @@ void PrimaryGeneratorAction::SetParticlePosition() {
     TRestGeant4Metadata* restG4Metadata = simulationManager->GetRestMetadata();
     const auto& primaryGeneratorInfo = restG4Metadata->GetGeant4PrimaryGeneratorInfo();
 
-    const string& spatialGeneratorTypeName = primaryGeneratorInfo.GetSpatialGeneratorType().Data();
+    const string& spatialGeneratorTypeName = primaryGeneratorInfo.GetSpatialGeneratorType();
     const auto spatialGeneratorTypeEnum = StringToSpatialGeneratorTypes(spatialGeneratorTypeName);
 
-    const string& spatialGeneratorShapeName = primaryGeneratorInfo.GetSpatialGeneratorShape().Data();
+    const string& spatialGeneratorShapeName = primaryGeneratorInfo.GetSpatialGeneratorShape();
     const auto spatialGeneratorShapeEnum = StringToSpatialGeneratorShapes(spatialGeneratorShapeName);
 
     double x = 0, y = 0, z = 0;
@@ -794,11 +701,11 @@ void PrimaryGeneratorAction::GenPositionOnBoxVolume(double& x, double& y, double
 
     G4ThreeVector position = G4ThreeVector(x, y, z);
 
-    const TVector3& rotationAxis = primaryGeneratorInfo.GetSpatialGeneratorRotationAxis();
+    const ROOT::Math::XYZVector& rotationAxis = primaryGeneratorInfo.GetSpatialGeneratorRotationAxis();
     G4ThreeVector rotationAxisG4 = G4ThreeVector(rotationAxis.x(), rotationAxis.y(), rotationAxis.z());
     position.rotate(rotationAxisG4, primaryGeneratorInfo.GetSpatialGeneratorRotationValue());
 
-    const TVector3& center = primaryGeneratorInfo.GetSpatialGeneratorPosition();
+    const ROOT::Math::XYZVector& center = primaryGeneratorInfo.GetSpatialGeneratorPosition();
 
     x = position.x() + center.X();
     y = position.y() + center.Y();
@@ -823,7 +730,7 @@ void PrimaryGeneratorAction::GenPositionOnSphereSurface(double& x, double& y, do
 
     const Double_t radius = primaryGeneratorInfo.GetSpatialGeneratorSize().X();
 
-    const TVector3& center = primaryGeneratorInfo.GetSpatialGeneratorPosition();
+    const ROOT::Math::XYZVector& center = primaryGeneratorInfo.GetSpatialGeneratorPosition();
 
     x = radius * position.x() + center.X();
     y = radius * position.y() + center.Y();
@@ -850,11 +757,11 @@ void PrimaryGeneratorAction::GenPositionOnCylinderSurface(double& x, double& y, 
 
     G4ThreeVector position = G4ThreeVector(x, y, z);
 
-    const TVector3& rotationAxis = primaryGeneratorInfo.GetSpatialGeneratorRotationAxis();
+    const ROOT::Math::XYZVector& rotationAxis = primaryGeneratorInfo.GetSpatialGeneratorRotationAxis();
     G4ThreeVector rotationAxisG4 = G4ThreeVector(rotationAxis.x(), rotationAxis.y(), rotationAxis.z());
     position.rotate(rotationAxisG4, primaryGeneratorInfo.GetSpatialGeneratorRotationValue());
 
-    const TVector3& center = primaryGeneratorInfo.GetSpatialGeneratorPosition();
+    const ROOT::Math::XYZVector& center = primaryGeneratorInfo.GetSpatialGeneratorPosition();
 
     x = position.x() + center.X();
     y = position.y() + center.Y();
@@ -865,7 +772,7 @@ void PrimaryGeneratorAction::GenPositionOnPoint(double& x, double& y, double& z)
     TRestGeant4Metadata* restG4Metadata = fSimulationManager->GetRestMetadata();
     const auto& primaryGeneratorInfo = restG4Metadata->GetGeant4PrimaryGeneratorInfo();
 
-    const TVector3& position = primaryGeneratorInfo.GetSpatialGeneratorPosition();
+    const ROOT::Math::XYZVector& position = primaryGeneratorInfo.GetSpatialGeneratorPosition();
 
     x = position.X();
     y = position.Y();
@@ -884,11 +791,11 @@ void PrimaryGeneratorAction::GenPositionOnWall(double& x, double& y, double& z) 
 
     G4ThreeVector position = G4ThreeVector(x, y, 0);
 
-    const TVector3& rotationAxis = primaryGeneratorInfo.GetSpatialGeneratorRotationAxis();
+    const ROOT::Math::XYZVector& rotationAxis = primaryGeneratorInfo.GetSpatialGeneratorRotationAxis();
     G4ThreeVector rotationAxisG4 = G4ThreeVector(rotationAxis.x(), rotationAxis.y(), rotationAxis.z());
     position.rotate(rotationAxisG4, primaryGeneratorInfo.GetSpatialGeneratorRotationValue());
 
-    const TVector3& center = primaryGeneratorInfo.GetSpatialGeneratorPosition();
+    const ROOT::Math::XYZVector& center = primaryGeneratorInfo.GetSpatialGeneratorPosition();
 
     x = position.x() + center.X();
     y = position.y() + center.Y();
@@ -908,11 +815,11 @@ void PrimaryGeneratorAction::GenPositionOnDisk(double& x, double& y, double& z) 
 
     G4ThreeVector position = G4ThreeVector(x, y, 0);
 
-    const TVector3& rotationAxis = primaryGeneratorInfo.GetSpatialGeneratorRotationAxis();
+    const ROOT::Math::XYZVector& rotationAxis = primaryGeneratorInfo.GetSpatialGeneratorRotationAxis();
     G4ThreeVector rotationAxisG4 = G4ThreeVector(rotationAxis.x(), rotationAxis.y(), rotationAxis.z());
     position.rotate(rotationAxisG4, primaryGeneratorInfo.GetSpatialGeneratorRotationValue());
 
-    const TVector3& center = primaryGeneratorInfo.GetSpatialGeneratorPosition();
+    const ROOT::Math::XYZVector& center = primaryGeneratorInfo.GetSpatialGeneratorPosition();
 
     x = position.x() + center.X();
     y = position.y() + center.Y();
@@ -928,11 +835,11 @@ void PrimaryGeneratorAction::SetParticleEnergyAndDirection(Int_t particleSourceI
     // const auto& primaryGeneratorInfo = restG4Metadata->GetGeant4PrimaryGeneratorInfo();
 
     const string angularDistTypeName =
-        restG4Metadata->GetParticleSource(particleSourceIndex)->GetAngularDistributionType().Data();
+        restG4Metadata->GetParticleSource(particleSourceIndex)->GetAngularDistributionType();
     const auto angularDistTypeEnum = StringToAngularDistributionTypes(angularDistTypeName);
 
     const string energyDistTypeName =
-        restG4Metadata->GetParticleSource(particleSourceIndex)->GetEnergyDistributionType().Data();
+        restG4Metadata->GetParticleSource(particleSourceIndex)->GetEnergyDistributionType();
     const auto energyDistTypeEnum = StringToEnergyDistributionTypes(energyDistTypeName);
 
     if ((energyDistTypeEnum != EnergyDistributionTypes::FORMULA2 &&
@@ -959,9 +866,9 @@ void PrimaryGeneratorAction::SetParticleEnergyAndDirection(Int_t particleSourceI
             const auto name = source->GetEnergyDistributionNameInFile();
             cout << "Loading energy and angular distribution from file " << filename << " with name " << name
                  << endl;
-            TFile* file = TFile::Open(filename);
+            TFile* file = TFile::Open(filename.c_str());
             energyAndAngularDistributionHistogram =
-                file->Get<TH2D>(name);  // it's the same for both angular and energy
+                file->Get<TH2D>(name.c_str());  // it's the same for both angular and energy
         }
         energyAndAngularDistributionHistogram->GetRandom2(energy, angle);
         energy *= MeV;  // energy in these histograms is in MeV. TODO: parse energy from axis label

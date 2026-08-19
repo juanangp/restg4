@@ -2,19 +2,12 @@
 <!-- ##VERSION REST Example 01.NLDBD Version 1.0## -->
 
 <!DOCTYPE gdml [
-        <!ENTITY geometry SYSTEM "geometry.gdml">
-        <!ENTITY materials SYSTEM "https://rest-for-physics.github.io/materials/rest.xml">
+        <!ENTITY geometry SYSTEM "geometry/geometry.gdml">
+        <!ENTITY materials SYSTEM "geometry/materials.xml">
         ]>
 
 <gdml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:noNamespaceSchemaLocation="http://service-spi.web.cern.ch/service-spi/app/releases/GDML/schema/gdml.xsd">
-
-    <!-- Just an example of main geometry file : myGeometryTemplate.gdml
-         This file just defines de parameters of the geometry.
-         The geometry it is defined in geometry/myGeometryDefinition.gdml
-         The materials are defined in geometry/materials.xml
-         Author :   J. Galan    Date : 09-Jul-2015
-    -->
 
     <!-- All values should be in mm -->
 

@@ -1,4 +1,5 @@
 
+#include <algorithm>
 #include <G4Event.hh>
 #include <G4HadronicProcess.hh>
 #include <G4Nucleus.hh>
@@ -21,115 +22,120 @@ TRestGeant4Event::TRestGeant4Event(const G4Event* event) : TRestGeant4Event() {
 
     auto primaryVertex = event->GetPrimaryVertex();
     const auto& position = primaryVertex->GetPosition();
-    fPrimaryPosition = {position.x() / CLHEP::mm, position.y() / CLHEP::mm, position.z() / CLHEP::mm};
+    fEventData.primaryPosition = {position.x() / CLHEP::mm, position.y() / CLHEP::mm, position.z() / CLHEP::mm};
     for (int i = 0; i < primaryVertex->GetNumberOfParticle(); i++) {
         const auto& primaryParticle = primaryVertex->GetPrimary(i);
-        fPrimaryParticleNames.emplace_back(primaryParticle->GetParticleDefinition()->GetParticleName());
-        fPrimaryEnergies.emplace_back(primaryParticle->GetKineticEnergy() / CLHEP::keV);
+        fEventData.primaryParticleNames.emplace_back(primaryParticle->GetParticleDefinition()->GetParticleName());
+        fEventData.primaryEnergies.emplace_back(primaryParticle->GetKineticEnergy() / CLHEP::keV);
         const auto& momentum = primaryParticle->GetMomentumDirection();
-        fPrimaryDirections.emplace_back(momentum.x(), momentum.y(), momentum.z());
+        fEventData.primaryDirections.emplace_back(momentum.x(), momentum.y(), momentum.z());
     }
 
-    /*
-    // TODO: move this
-    // Defining if the hits in a given volume will be stored
-    const auto metadata = GetGeant4Metadata();
-    if (metadata != nullptr) {
-        for (int i = 0; i < metadata->GetNumberOfActiveVolumes(); i++) {
-            if (metadata->GetStorageChance(i) >= 1.00) {
-                ActivateVolumeForStorage(i);
-            } else {
-                Double_t randomNumber = G4UniformRand();
-                if (metadata->GetStorageChance(i) >= randomNumber) {
-                    ActivateVolumeForStorage(i);
-                } else {
-                    DisableVolumeForStorage(i);
-                }
-            }
-        }
-    }
-    */
 }
 
 bool TRestGeant4Event::InsertTrack(const G4Track* track) {
-    if (fInitialStep.GetNumberOfHits() != 1) {
-        cout << "fInitialStep does not have exactly one step! Problem with stepping verbose" << endl;
-        exit(1);
-    }
+    if (!track) return false;
+
+    const bool hasInitialStep = fInitialStep.GetNumberOfHits() == 1;
 
     if ((fTracks.empty() && IsSubEvent()) ||
         (fTracks.empty() && !IsSubEvent() && GetGeant4Metadata()->GetNumberOfSources() == 1)) {
-        // First track of sub-event (primary)
-        fSubEventPrimaryParticleName = track->GetParticleDefinition()->GetParticleName();
-        fSubEventPrimaryEnergy = track->GetKineticEnergy() / CLHEP::keV;
+        fEventData.subEventParticleName = track->GetParticleDefinition()->GetParticleName();
+        fEventData.subEventEnergy = track->GetKineticEnergy() / CLHEP::keV;
         const auto& position = track->GetPosition();
-        fSubEventPrimaryPosition = {position.x() / CLHEP::mm, position.y() / CLHEP::mm,
-                                    position.z() / CLHEP::mm};
+        fEventData.subEventPosition = {position.x() / CLHEP::mm, position.y() / CLHEP::mm,
+                                       position.z() / CLHEP::mm};
         const auto& momentum = track->GetMomentumDirection();
-        fSubEventPrimaryDirection = {momentum.x(), momentum.y(), momentum.z()};
+        fEventData.subEventDirection = {momentum.x(), momentum.y(), momentum.z()};
     }
 
-    if (fTracks.empty() && fSubEventID == 0) globalTimeOffset = 0;
+    if (fTracks.empty() && GetSubID() == 0) globalTimeOffset = 0;
 
-    fTrackIDToTrackIndex[track->GetTrackID()] = int(fTracks.size());  // before insertion
+    fTrackIDToTrackIndex[track->GetTrackID()] = int(fTracks.size());
 
-    fTracks.emplace_back(track);
+    // 1. Instantiating the clean track on the heap matrix
+    TRestGeant4Track* newTrack = new TRestGeant4Track(track);
 
-    auto& insertedTrack = fTracks.back();
+    // preventing TClassEdit::GetSplit from tracking unaligned memory chunk operations.
+    newTrack->RemoveHits(); 
 
-    insertedTrack.SetHits(fInitialStep);
-    insertedTrack.SetEvent(this);
+    // Associate the initial stepping birth parameters when available.
+    if (hasInitialStep) {
+        newTrack->SetHits(fInitialStep);
+    }
+    newTrack->SetEvent(this);
 
-    TRestGeant4Track* parentTrack = GetTrackByID(track->GetParentID());
-    if (parentTrack) {
-        parentTrack->AddSecondaryTrackID(track->GetTrackID());
+    fTracks.push_back(newTrack);
+
+    auto parentTrackIt = fTrackIDToTrackIndex.find(track->GetParentID());
+    if (parentTrackIt != fTrackIDToTrackIndex.end()) {
+        fTracks[parentTrackIt->second]->AddSecondaryTrackID(track->GetTrackID());
     }
 
     return true;
 }
 
-void TRestGeant4Event::UpdateTrack(const G4Track* track) { fTracks.back().UpdateTrack(track); }
+void TRestGeant4Event::UpdateTrack(const G4Track* track) { fTracks.back()->UpdateTrack(track); }
 
 void TRestGeant4Event::InsertStep(const G4Step* step) {
+    if (!step) return;
+
     if (step->GetTrack()->GetCurrentStepNumber() == 0) {
-        // initial step (from SteppingVerbose) is generated before TrackingAction can insert the first track
-        fInitialStep = TRestGeant4Hits();
-        fInitialStep.SetEvent(this);
-        fInitialStep.InsertStep(step);
+        if (fInitialStep.GetNumberOfHits() == 0) {
+            fInitialStep.RemoveG4Hits();
+            fInitialStep.SetEvent(this);
+            fInitialStep.InsertStep(step);
+        } else {
+            // Optional: If Geant4 sends an update for the same step 0, we append instead of wiping out,
+            // or simply ignore it if we only want the pure birth checkpoint.
+            // For strict 1-hit alignment, ignoring duplicate init calls is the standard practice.
+            return; 
+        }
     } else {
-        fTracks.back().InsertStep(step);
+        const auto trackId = step->GetTrack()->GetTrackID();
+        
+        auto trackIt = std::find_if(fTracks.begin(), fTracks.end(), [trackId](const TRestGeant4Track* track) {
+            return track != nullptr && track->GetTrackID() == trackId;
+        });
+        
+        if (trackIt != fTracks.end()) {
+            (*trackIt)->InsertStep(step);
+        } else {
+            RESTError << "TRestGeant4Event::InsertStep - Track ID " << trackId << " was not registered" << RESTendl;
+            return;
+        }
     }
 }
+
+
 
 bool OutputManager::IsValidTrack(const G4Track*) const { return true; }
 
 bool OutputManager::IsValidStep(const G4Step*) const { return true; }
 
-TRestGeant4Track::TRestGeant4Track(const G4Track* track) : TRestGeant4Track() {
+TRestGeant4Track::TRestGeant4Track(const G4Track* track) {
+    
     fTrackID = track->GetTrackID();
     fParentID = track->GetParentID();
 
     auto particle = track->GetParticleDefinition();
-    fParticleName = particle->GetParticleName();
-    /*
-    fParticleID = particle->GetPDGEncoding();
-    fParticleType = particle->GetParticleType();
-    fParticleSubType = particle->GetParticleSubType();
-    */
+    
+    fParticleName = TString(particle->GetParticleName());
+
     if (track->GetCreatorProcess() != nullptr) {
-        fCreatorProcess = track->GetCreatorProcess()->GetProcessName();
+        fCreatorProcess = TString(track->GetCreatorProcess()->GetProcessName());
     } else {
-        fCreatorProcess = "PrimaryGenerator";
+        fCreatorProcess = TString("PrimaryGenerator");
     }
 
     fInitialKineticEnergy = track->GetKineticEnergy() / CLHEP::keV;
-
     fWeight = track->GetWeight();
-
     fGlobalTimestamp = track->GetGlobalTime() / CLHEP::microsecond;
 
     const G4ThreeVector& trackOrigin = track->GetPosition();
     fInitialPosition = {trackOrigin.x(), trackOrigin.y(), trackOrigin.z()};
+
+    //fSecondaryTrackIDs.reserve(32); 
 }
 
 void TRestGeant4Track::InsertStep(const G4Step* step) { fHits.InsertStep(step); }
@@ -190,7 +196,7 @@ void TRestGeant4Hits::InsertStep(const G4Step* step) {
         G4VPhysicalVolume* pv = th->GetVolume(depth - i);
         if (pv) {
             if (geant4path != "") {
-                geant4path += geometryInfo.GetPathSeparator().Data();
+                geant4path += geometryInfo.GetPathSeparator().c_str();
             }
             geant4path += pv->GetName();
         }
@@ -244,11 +250,11 @@ void TRestGeant4Hits::InsertStep(const G4Step* step) {
     Double_t y = aTrack->GetPosition().y() / CLHEP::mm;
     Double_t z = aTrack->GetPosition().z() / CLHEP::mm;
 
-    const TVector3 hitPosition(x, y, z);
+    const ROOT::Math::XYZVector hitPosition(x, y, z);
     const Double_t hitGlobalTime = track->GetGlobalTime() / CLHEP::microsecond;
     const G4ThreeVector& momentum = track->GetMomentumDirection();
 
-    AddHit(hitPosition, energy, hitGlobalTime);  // this increases fNHits
+    AddHit(hitPosition, energy, hitGlobalTime, TRestHitsData::REST_HitType::unknown);  // this increases fNHits
 
     fProcessID.emplace_back(processID);
     fVolumeID.emplace_back(geometryInfo.GetIDFromVolume(volumeName));
@@ -262,13 +268,14 @@ void TRestGeant4Hits::InsertStep(const G4Step* step) {
     if (metadata->GetStoreHadronicTargetInfo() && track->GetCurrentStepNumber() != 0 &&
         process->GetProcessType() == G4ProcessType::fHadronic) {
         auto hadronicProcess = dynamic_cast<const G4HadronicProcess*>(process);
-        G4Nucleus nucleus = *(hadronicProcess->GetTargetNucleus());
-
-        auto isotope = nucleus.GetIsotope();
-        if (isotope) {
-            isotopeName = isotope->GetName();
-            atomicNumber = isotope->GetZ();
-            atomicMassNumber = isotope->GetN();
+        auto* targetNucleus = hadronicProcess ? const_cast<G4Nucleus*>(hadronicProcess->GetTargetNucleus()) : nullptr;
+        if (targetNucleus != nullptr) {
+            auto isotope = targetNucleus->GetIsotope();
+            if (isotope) {
+                isotopeName = isotope->GetName();
+                atomicNumber = isotope->GetZ();
+                atomicMassNumber = isotope->GetN();
+            }
         }
     }
 
@@ -278,19 +285,56 @@ void TRestGeant4Hits::InsertStep(const G4Step* step) {
         fHadronicTargetIsotopeA.emplace_back(atomicMassNumber);
     }
 
-    SimulationManager::GetOutputManager()->AddEnergyToVolumeForParticleForProcess(energy, volumeName,
-                                                                                  particleName, processName);
+    SimulationManager::GetOutputManager()->AddEnergyToVolumeForParticleForProcess(energy, volumeName.c_str(),
+                                                                                  particleName.c_str(), processName.c_str());
+}
+
+void TRestGeant4Event::SyncTracksToEventData() {
+    auto preservedData = fEventData;
+    preservedData.trackIDs.clear();
+    preservedData.parentIDs.clear();
+    preservedData.trackParticleNames.clear();
+    preservedData.trackCreatorProcesses.clear();
+    preservedData.trackInitialEnergies.clear();
+    preservedData.trackStartIndices.clear();
+    preservedData.trackNHits.clear();
+    fEventData.hitsStorage.clear();
+
+    fEventData = preservedData;
+    for (const auto& track : fTracks) {
+        fEventData.trackStartIndices.push_back(static_cast<int>(fEventData.hitsStorage.x.size()));
+        const auto& hits = track->GetHits();
+
+        fEventData.trackIDs.push_back(track->GetTrackID());
+        fEventData.parentIDs.push_back(track->GetParentID());
+        fEventData.trackParticleNames.push_back(track->GetParticleName());
+        fEventData.trackCreatorProcesses.push_back(track->GetCreatorProcess());
+        fEventData.trackInitialEnergies.push_back(track->GetInitialKineticEnergy());
+        fEventData.trackDepositedEnergy.push_back(hits.GetTotalEnergy());
+        fEventData.trackNHits.push_back(static_cast<int>(hits.GetNumberOfHits()));
+
+        for (size_t i = 0; i < hits.GetNumberOfHits(); ++i) {
+            fEventData.hitsStorage.x.push_back(static_cast<float>(hits.GetX(i)));
+            fEventData.hitsStorage.y.push_back(static_cast<float>(hits.GetY(i)));
+            fEventData.hitsStorage.z.push_back(static_cast<float>(hits.GetZ(i)));
+            fEventData.hitsStorage.energy.push_back(static_cast<float>(hits.GetEnergy(i)));
+            fEventData.hitsStorage.time.push_back(static_cast<float>(hits.GetTime(i)));
+            fEventData.hitsStorage.type.push_back(static_cast<int>(hits.GetType(i)));
+        }
+    }
+
+    RefreshViews();
 }
 
 void OutputManager::RemoveUnwantedTracks() {
     const auto& metadata = fSimulationManager->GetRestMetadata();
     set<int> trackIDsToKeep;  // We populate this container with the tracks we want to keep
-    for (const auto& track : fEvent->fTracks) {
+    for (const auto& track : fEvent->GetTracks()) {
         // If one children track is kept, we keep all the parents
-        if (trackIDsToKeep.count(track.GetTrackID()) > 0) {
+        if (trackIDsToKeep.count(track->GetTrackID()) > 0) {
             continue;
         }
-        const auto hits = track.GetHits();
+        const auto hits = track->GetHits();
         for (int i = 0; i < int(hits.GetNumberOfHits()); i++) {
             const auto energy = hits.GetEnergy(i);
             if (!fSimulationManager->GetRestMetadata()->GetRemoveUnwantedTracksKeepZeroEnergyTracks() &&
@@ -299,35 +343,42 @@ void OutputManager::RemoveUnwantedTracks() {
             }
             const auto volume = metadata->GetGeant4GeometryInfo().GetVolumeFromID(hits.GetVolumeId(i));
             if (metadata->IsKeepTracksVolume(volume)) {
-                trackIDsToKeep.insert(track.GetTrackID());
-                auto parentTrack = track.GetParentTrack();
-                while (parentTrack != nullptr) {
+                trackIDsToKeep.insert(track->GetTrackID());
+                auto parentID = track->GetParentID();
+                while (parentID >= 0) {
+                    auto parentTrackIt = fEvent->GetTrackIDToTrackIndex().find(parentID);
+                    if (parentTrackIt == fEvent->GetTrackIDToTrackIndex().end()) {
+                        break;
+                    }
+                    const auto& parentTrack = fEvent->GetTracks()[parentTrackIt->second];
                     trackIDsToKeep.insert(parentTrack->GetTrackID());
-                    parentTrack = parentTrack->GetParentTrack();
+                    parentID = parentTrack->GetParentID();
                 }
             }
         }
     }
-    // const size_t numberOfTracksBefore = fEvent->fTracks.size();
+    // const size_t numberOfTracksBefore = fEvent->GetTracks().size();
 
-    vector<TRestGeant4Track> tracksAfterRemoval;
-    for (const auto& track : fEvent->fTracks) {
+    vector<TRestGeant4Track*> tracksAfterRemoval;
+    for (const auto& track : fEvent->GetTracks()) {
         // we do this to preserve original order
-        if (trackIDsToKeep.count(track.GetTrackID()) > 0) {
-            tracksAfterRemoval.push_back(*(fEvent->GetTrackByID(track.GetTrackID())));
+        if (trackIDsToKeep.count(track->GetTrackID()) > 0) {
+            tracksAfterRemoval.push_back(track);
         }
     }
 
-    fEvent->fTracks = tracksAfterRemoval;
+    fEvent->GetTracks() = tracksAfterRemoval;
 
     // Updated indices
-    fEvent->fTrackIDToTrackIndex.clear();
-    for (int i = 0; i < int(fEvent->fTracks.size()); i++) {
-        fEvent->fTrackIDToTrackIndex[fEvent->fTracks[i].GetTrackID()] = i;
+    fEvent->GetTrackIDToTrackIndex().clear();
+    for (int i = 0; i < int(fEvent->GetTracks().size()); i++) {
+        fEvent->GetTrackIDToTrackIndex()[fEvent->GetTracks()[i]->GetTrackID()] = i;
     }
 
+    fEvent->SyncTracksToEventData();
+
     /*
-    const size_t numberOfTracksAfter = fEvent->fTracks.size();
+    const size_t numberOfTracksAfter = fEvent->GetTracks().size();
     cout << "EventID: " << fEvent->GetID() << " Removed " << numberOfTracksBefore - numberOfTracksAfter
          << " tracks out of " << numberOfTracksBefore << endl;
      */

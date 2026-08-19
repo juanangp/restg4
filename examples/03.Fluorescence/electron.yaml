@@ -1,0 +1,73 @@
+g4Manager:
+  class: "TRestGeant4Manager"
+
+  run:
+    class: "TRestRun"
+    mainDataPath: ""
+    verboseLevel: "info"
+    experimentName: "Fluorescence"
+    runType: "simulation"
+    runNumber: "1"
+    runTag: "Electron"
+    outputFileName: "Run[fRunNumber]_[fRunTag]_[fExperimentName].root"
+    runDescription: ""
+    runUser: "${ENV:USER}"
+
+  geant4Metadata:
+    class: "TRestGeant4Metadata"
+    gdmlFilename: "./setup.gdml"
+    subEventTimeDelay: 100
+    seed: 17021981
+    nEvents: 30000
+    registerEmptyTracks: false
+    saveAllEvents: false
+    storeTracks: true
+
+    energyRangeStored: [0.0, 30.0]
+    activateAllVolumes: false
+    activeVolumes:
+      - name: "detector"
+        chance: 1.0
+        maxStep: 1.0
+    sensitiveVolumes:
+      - "detector"
+
+    generator:
+      type: "point"
+      position: [0.0, 0.0, -200.0]
+      units: "mm"
+      source:
+        particle: "e-"
+        angular:
+          type: "flux"
+          direction: [0.0, 0.0, 1.0]
+        energy:
+          type: "mono"
+          energy: 30.0
+          units: "keV"
+
+  physicsLists:
+    class: "TRestGeant4PhysicsLists"
+    cutForGamma: 0.01
+    cutForElectron: 2.0
+    cutForPositron: 1.0
+    cutForMuon: 1.0
+    cutForNeutron: 1.0
+    minEnergyRangeProductionCuts: 1.0
+    maxEnergyRangeProductionCuts: 1000000.0
+
+    physicsList:
+      - name: "G4EmStandardPhysics_option4"
+      - name: "G4DecayPhysics"
+      - name: "G4RadioactiveDecayPhysics"
+      - name: "G4RadioactiveDecay"
+        option:
+          - name: "ICM"
+            value: "true"
+          - name: "ARM"
+            value: "true"
+      - name: "G4HadronElasticPhysicsHP"
+      - name: "G4IonBinaryCascadePhysics"
+      - name: "G4HadronPhysicsQGSP_BIC_HP"
+      - name: "G4NeutronTrackingCut"
+      - name: "G4EmExtraPhysics"

@@ -8,6 +8,8 @@
 #include <TRestGeant4Track.h>
 #include <TRestRun.h>
 
+#include <TH1D.h>
+
 #include <queue>
 #include <thread>
 

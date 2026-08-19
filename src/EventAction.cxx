@@ -25,7 +25,7 @@ void EventAction::BeginOfEventAction(const G4Event* event) {
     TRestRun* restRun = fSimulationManager->GetRestRun();
 
     TRestGeant4Metadata* restG4Metadata = fSimulationManager->GetRestMetadata();
-    if (restG4Metadata->GetVerboseLevel() >= TRestStringOutput::REST_Verbose_Level::REST_Debug) {
+    if (restG4Metadata->GetVerboseLevel() >= TRestLogManager::REST_Verbose_Level::REST_Debug) {
         G4cout << "DEBUG: Start of event ID " << eventID << " (" << eventID + 1 << " of "
                << G4RunManager::GetRunManager()->GetNumberOfEventsToBeProcessed() << "). "
                << restRun->GetEntries() << " Events stored" << endl;
@@ -35,7 +35,7 @@ void EventAction::BeginOfEventAction(const G4Event* event) {
         const int numberOfEventsToBePercent =
             G4RunManager::GetRunManager()->GetNumberOfEventsToBeProcessed() / 100;
         if ((restG4Metadata->PrintProgress() &&
-             restG4Metadata->GetVerboseLevel() != TRestStringOutput::REST_Verbose_Level::REST_Silent) &&
+             restG4Metadata->GetVerboseLevel() != TRestLogManager::REST_Verbose_Level::REST_Silent) &&
             // print roughly every 1% of events or whenever 10 seconds without printing have elapsed
             (numberOfEventsToBePercent > 0 && (eventID + 1) % numberOfEventsToBePercent == 0)) {
             fSimulationManager->SyncStatsFromChild();

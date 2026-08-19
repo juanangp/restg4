@@ -1,122 +1,76 @@
-# Setup the project
-project(restG4)
+# ---------------------------------------------------------------------------
+# packages/restG4 - optional Geant4 application package
+# ---------------------------------------------------------------------------
 
-message("===============  ${PROJECT_NAME}  ==============")
-set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../cmake
-                      ${CMAKE_MODULE_PATH})
+# Si se compila este paquete de forma 100% aislada e independiente
+if(CMAKE_PROJECT_NAME STREQUAL "restG4")
+  cmake_minimum_required(VERSION 3.18)
+  project(restG4 LANGUAGES CXX)
 
-if (${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})
-    # this will only be accessed when build restG4 as a standalone package, not
-    # when building the framework
-    cmake_minimum_required(VERSION 3.16)
-    find_package(REST REQUIRED)
-    string(FIND ${REST_LIBRARIES} "RestGeant4" REST_GEANT4_FOUND)
-    if (${REST_GEANT4_FOUND} EQUAL -1)
-        message(
-            SEND_ERROR
-                "REST found but 'RestGeant4' library is not present. Please install REST with Geant4Lib"
-        )
-    endif ()
-endif ()
+  set(ROOT_REQUIRED_LIBRARIES Core RIO Tree Graf Hist Physics Geom)
+  find_package(ROOT 6.24 REQUIRED COMPONENTS ${ROOT_REQUIRED_LIBRARIES})
+  include(${ROOT_USE_FILE})
 
-# Find ROOT
-find_package(ROOT REQUIRED COMPONENTS RIO Geom)
-execute_process(COMMAND root-config --cflags OUTPUT_VARIABLE ROOT_CFLAGS)
-string(STRIP ${ROOT_CFLAGS} ROOT_CFLAGS)
-message(
-    STATUS
-        "-- Found ROOT version: ${ROOT_VERSION} with compilation flags: ${ROOT_CFLAGS} and libraries: ${ROOT_LIBRARIES}"
-)
+  set(ROOT_TARGET_LIBRARIES "")
+  foreach(_root_lib IN LISTS ROOT_REQUIRED_LIBRARIES)
+    list(APPEND ROOT_TARGET_LIBRARIES ROOT::${_root_lib})
+  endforeach()
 
-# Find Geant4
+  find_package(yaml-cpp REQUIRED)
+  
+  # Si es aislado, definimos los nombres canónicos que faltan del padre
+  set(GEANT4_LIB RestGeant4) 
+endif()
+
+# Requisito obligatorio del paquete: Motor Geant4
 find_package(Geant4 REQUIRED ui_all vis_all)
 include(${Geant4_USE_FILE})
-message("-- Found Geant4 version: ${Geant4_VERSION}")
 
-# Check Geant4 C++ standard is correct
-execute_process(COMMAND geant4-config --cxxstd OUTPUT_VARIABLE GEANT4_CXX_STD)
-if (NOT ${GEANT4_CXX_STD} MATCHES "17")
-    message(
-        FATAL_ERROR
-            "Geant4 installation was compiled with C++${GEANT4_CXX_STD} standard, but C++17 is required for REST"
-    )
-endif ()
+if(Geant4_VERSION VERSION_LESS 11.0.0)
+  add_compile_definitions(GEANT4_VERSION_LESS_11_0_0)
+endif()
 
-# Fix for older Geant4 versions
-if (${Geant4_VERSION} VERSION_LESS 11.0.0)
-    add_compile_definitions(GEANT4_VERSION_LESS_11_0_0)
-endif ()
+if(NOT EXISTS "${Geant4_INCLUDE_DIRS}/G4RunManagerFactory.hh")
+  add_compile_definitions(GEANT4_WITHOUT_G4RunManagerFactory)
+endif()
 
-# Fix to allow compatibility with older Geant4 versions that don't have
-# G4RunManagerFactory
-if (NOT EXISTS "${Geant4_INCLUDE_DIRS}/G4RunManagerFactory.hh")
-    add_compile_definitions(GEANT4_WITHOUT_G4RunManagerFactory)
-endif ()
+# Rastreo de fuentes internas de la aplicación
+file(GLOB_RECURSE RESTG4_SOURCES src/*.cxx)
+file(GLOB_RECURSE RESTG4_HEADERS include/*.h)
 
-if (NOT DEFINED CMAKE_INSTALL_PREFIX)
-    set(CMAKE_INSTALL_PREFIX ${REST_PATH})
-endif ()
+add_library(RestG4 SHARED ${RESTG4_SOURCES})
 
-message(
-    STATUS
-        "Package ${PROJECT_NAME} will be installed in ${CMAKE_INSTALL_PREFIX}")
+target_include_directories(
+  RestG4
+  SYSTEM
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/libraries/geant4/inc>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/source/core/inc>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/source/tools/inc>
+    $<INSTALL_INTERFACE:include>)
 
-if (NOT CMAKE_CXX_FLAGS)
-    set(CMAKE_CXX_FLAGS " -std=c++1y")
-endif ()
+# Enlace de dependencias de la aplicación (Core + Geant4_LIB unificados)
+target_link_libraries(
+  RestG4
+  PUBLIC
+    RestCore
+    RestTools
+    ${GEANT4_LIB}              # Ahora siempre vale "RestGeant4", garantizando el enlace
+    ${Geant4_LIBRARIES}        # Librerías nativas de Geant4
+    ${ROOT_TARGET_LIBRARIES}   # Librerías modernas ROOT::Core, ROOT::Tree, etc.
+    yaml-cpp
+)
 
-# Set include and lib
-set(INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/include ${ROOT_INCLUDE_DIRS}
-                 ${Geant4_INCLUDE_DIR} ${REST_INCLUDE_DIRS})
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/examples DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
-if (NOT ${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})
-    set(INCLUDE_DIRS ${INCLUDE_DIRS} ${rest_include_dirs})
-endif ()
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/examples/ DESTINATION examples/restG4)
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/mac DESTINATION macros)
+install(TARGETS RestG4 DESTINATION lib)
+install(FILES ${RESTG4_HEADERS} DESTINATION include)
 
-set(LINK_LIBRARIES ${Geant4_LIBRARIES} ${ROOT_LIBRARIES} RestFramework
-                   RestGeant4)
-string(STRIP "${LINK_LIBRARIES}" LINK_LIBRARIES)
+# --- Generación del Binario Ejecutable Final ---
+add_executable(restG4 main.cxx)
+target_link_libraries(restG4 PRIVATE RestG4)
+install(TARGETS restG4 RUNTIME DESTINATION bin)
 
-file(GLOB sources ${PROJECT_SOURCE_DIR}/src/*.cxx)
-file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.h)
-
-# Create a library, necessary to enable testing
-set(LIBRARY RestRestG4) # this way the `ADD_LIBRARY_TEST` macro will pick the
-                        # library name correctly
-add_library(${LIBRARY} SHARED)
-
-target_sources(${LIBRARY} PUBLIC ${sources})
-target_link_libraries(${LIBRARY} ${LINK_LIBRARIES})
-target_include_directories(${LIBRARY} SYSTEM PUBLIC ${INCLUDE_DIRS})
-
-if (NOT ${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})
-    add_library_test()
-endif ()
-
-# Add the executable
-add_executable(${PROJECT_NAME} main.cxx)
-
-target_link_libraries(${PROJECT_NAME} PUBLIC ${LIBRARY})
-
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/examples
-     DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
-
-install(
-    DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/examples/
-    DESTINATION ./examples/restG4/
-    COMPONENT install)
-
-install(
-    DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/mac
-    DESTINATION macros
-    COMPONENT install)
-
-install(TARGETS ${PROJECT_NAME} DESTINATION bin)
-install(TARGETS ${LIBRARY} DESTINATION lib)
-
-if (NOT ${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})
-    set(package_added "${PROJECT_NAME} ")
-    set(package_added
-        ${package_added}
-        PARENT_SCOPE)
-endif ()

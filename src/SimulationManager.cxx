@@ -1,13 +1,12 @@
 
 #include "SimulationManager.h"
+#include "SteppingAction.h"
 
 #include <G4EventManager.hh>
 #include <G4Nucleus.hh>
 #include <G4Threading.hh>
 #include <Randomize.hh>
 #include <csignal>
-
-#include "SteppingAction.h"
 
 using namespace std;
 
@@ -70,13 +69,13 @@ void PeriodicPrint(SimulationManager* simulationManager) {
             progress = " | " + to_string(simulationManager->GetNumberOfStoredEvents()) + " entries / " +
                        to_string(restG4Metadata->GetNumberOfRequestedEntries()) + " requested";
         } else if (outputPercentageType == "time") {
-            progress = " | " + ToTimeStringLong(simulationManager->GetElapsedTime()) + " elapsed / " +
-                       ToTimeStringLong(simulationManager->GetRestMetadata()->GetSimulationMaxTimeSeconds());
+            progress = " | " + TRestTools::ToTimeStringLong(simulationManager->GetElapsedTime()) + " elapsed / " +
+                       TRestTools::ToTimeStringLong(simulationManager->GetRestMetadata()->GetSimulationMaxTimeSeconds());
         }
 
         string timeInfo;
         if (outputPercentageType != "time") {
-            timeInfo = " | " + ToTimeStringLong(simulationManager->GetElapsedTime()) + " elapsed";
+            timeInfo = " | " + TRestTools::ToTimeStringLong(simulationManager->GetElapsedTime()) + " elapsed";
         }
 
         G4cout << TString::Format("%5.2f", completionPercentage).Data() << "% | "
@@ -107,7 +106,7 @@ void SimulationManager::BeginOfRunAction() {
 #ifndef GEANT4_WITHOUT_G4RunManagerFactory
     // gives segfault in old Geant4 versions such as 10.4.3, didn't look into it
     if (GetRestMetadata()->PrintProgress() ||
-        GetRestMetadata()->GetVerboseLevel() >= TRestStringOutput::REST_Verbose_Level::REST_Essential) {
+        GetRestMetadata()->GetVerboseLevel() >= TRestLogManager::REST_Verbose_Level::REST_Silent) {
         fPeriodicPrintThread = make_unique<thread>(&PeriodicPrint, this);
     }
 #endif
@@ -166,22 +165,13 @@ void SimulationManager::WriteEvents() {
             fEvent.ClearTracks();
         }
 
-        const auto eventTree = fRestRun->GetEventTree();
-        if (eventTree != nullptr) {
-            eventTree->Fill();
-        }
-
-        const auto analysisTree = fRestRun->GetAnalysisTree();
-        if (analysisTree != nullptr) {
-            analysisTree->SetEventInfo(&fEvent);
-            analysisTree->Fill();
-        }
+        fRestRun->Fill();
 
         fEventContainer.pop();
     }
 
     const auto nRequestedEntries = GetRestMetadata()->GetNumberOfRequestedEntries();
-    if (nRequestedEntries > 0 && !fAbortFlag && fRestRun->GetEventTree()->GetEntries() >= nRequestedEntries) {
+    if (nRequestedEntries > 0 && !fAbortFlag && fRestRun->GetEntries() >= nRequestedEntries) {
         G4cout << "Stopping Run! We have reached the number of requested entries (" << nRequestedEntries
                << ")" << endl;
         StopSimulation();
@@ -191,6 +181,11 @@ void SimulationManager::WriteEvents() {
 void SimulationManager::InitializeUserDistributions() {
     auto random = []() { return (double)G4UniformRand(); };
 
+    if (fRestGeant4Metadata == nullptr || fRestGeant4Metadata->GetNumberOfSources() == 0) {
+        std::cout << "No particle sources or user distributions registered. Exiting..." << std::endl;
+        exit(1); 
+    }
+
     for (int i = 0; i < fRestGeant4Metadata->GetNumberOfSources(); i++) {
         fRestGeant4Metadata->GetParticleSource(i)->SetRandomMethod(random);
     }
@@ -198,10 +193,10 @@ void SimulationManager::InitializeUserDistributions() {
     TRestGeant4ParticleSource* source = fRestGeant4Metadata->GetParticleSource(0);
 
     if (TRestGeant4PrimaryGeneratorTypes::StringToEnergyDistributionTypes(
-            source->GetEnergyDistributionType().Data()) ==
+            source->GetEnergyDistributionType()) ==
         TRestGeant4PrimaryGeneratorTypes::EnergyDistributionTypes::TH1D) {
-        TFile file(source->GetEnergyDistributionFilename());
-        auto distribution = (TH1D*)file.Get(source->GetEnergyDistributionNameInFile());
+        TFile file(source->GetEnergyDistributionFilename().c_str());
+        auto distribution = (TH1D*)file.Get(source->GetEnergyDistributionNameInFile().c_str());
 
         if (!distribution) {
             RESTError << "Error when trying to find energy spectrum" << RESTendl;
@@ -214,10 +209,10 @@ void SimulationManager::InitializeUserDistributions() {
     }
 
     if (TRestGeant4PrimaryGeneratorTypes::StringToAngularDistributionTypes(
-            source->GetAngularDistributionType().Data()) ==
+            source->GetAngularDistributionType()) ==
         TRestGeant4PrimaryGeneratorTypes::AngularDistributionTypes::TH1D) {
-        TFile file(source->GetAngularDistributionFilename());
-        auto distribution = (TH1D*)file.Get(source->GetAngularDistributionNameInFile());
+        TFile file(source->GetAngularDistributionFilename().c_str());
+        auto distribution = (TH1D*)file.Get(source->GetAngularDistributionNameInFile().c_str());
 
         if (!distribution) {
             RESTError << "Error when trying to find angular spectrum" << RESTendl;
@@ -270,7 +265,7 @@ void OutputManager::BeginOfEventAction() {
         fSimulationManager->GetElapsedTime() >
             fSimulationManager->GetRestMetadata()->GetSimulationMaxTimeSeconds()) {
         G4cout << "Stopping Run! We have reached the time limit of "
-               << ToTimeStringLong(fSimulationManager->GetRestMetadata()->GetSimulationMaxTimeSeconds())
+               << TRestTools::ToTimeStringLong(fSimulationManager->GetRestMetadata()->GetSimulationMaxTimeSeconds())
                << endl;
         fSimulationManager->StopSimulation();
     }
@@ -279,23 +274,35 @@ void OutputManager::BeginOfEventAction() {
 void OutputManager::UpdateEvent() {
     auto event = G4EventManager::GetEventManager()->GetConstCurrentEvent();
     fEvent = make_unique<TRestGeant4Event>(event);
-    fEvent->InitializeReferences(fSimulationManager->GetRestRun());
 
-    if ((event->GetPrimaryVertex()->GetNumberOfParticle() !=
-         fEvent->GetGeant4Metadata()->GetNumberOfSources()) &&
-        (int(fEvent->GetNumberOfPrimaries()) != fEvent->GetGeant4Metadata()->GetNumberOfSources())) {
+    if (fSimulationManager->GetRestMetadata() != nullptr) {
+        fEvent->SetGeant4Metadata(fSimulationManager->GetRestMetadata());
+    }
+
+    if (fSimulationManager->GetRestRun() != nullptr) {
+        fEvent->SetRunOrigin(fSimulationManager->GetRestRun()->GetRunNumber());
+        fEvent->SetSubRunOrigin(fSimulationManager->GetRestRun()->GetSubRunNumber());
+    }
+
+    const auto metadata = fSimulationManager->GetRestMetadata();
+    if (metadata == nullptr) {
+        cout << "TRestGeant4Event: Missing Geant4 metadata for event ID: " << fEvent->GetID() << endl;
+        exit(1);
+    }
+
+    const auto primaryVertex = event->GetPrimaryVertex();
+    const int primaryParticles = primaryVertex != nullptr ? primaryVertex->GetNumberOfParticle() : 0;
+    const int numberOfSources = metadata->GetNumberOfSources();
+
+    if (primaryParticles != numberOfSources && int(fEvent->GetNumberOfPrimaries()) != numberOfSources) {
         cout << "TRestGeant4Event: Number of particles on primary vertex does not match number of sources "
                 "for event ID: "
              << fEvent->GetID() << endl;
         exit(1);
     }
-
-    for (const TString& volumeName : fEvent->GetGeant4Metadata()->GetActiveVolumes()) {
-        fEvent->AddActiveVolume(volumeName.Data());
-    }
 }
 
-bool OutputManager::IsEmptyEvent() const { return !fEvent || fEvent->fTracks.empty(); }
+bool OutputManager::IsEmptyEvent() const { return !fEvent || fEvent->GetTracks().empty(); }
 
 bool OutputManager::IsValidEvent() const {
     if (IsEmptyEvent()) {
@@ -317,17 +324,16 @@ bool OutputManager::IsValidEvent() const {
 
 void OutputManager::FinishAndSubmitEvent() {
     if (IsValidEvent()) {
-        for (int i = 0; i < fEvent->GetNumberOfActiveVolumes(); i++) {
-            fEvent->SetEnergyDepositedInVolume(i, fEvent->GetEnergyInVolume(fEvent->fVolumeStoredNames[i]));
-        }
+
         if (fSimulationManager->GetRestMetadata()->GetRemoveUnwantedTracks()) {
             RemoveUnwantedTracks();
         }
+        fEvent->SyncTracksToEventData();
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> elapsed = end - fEventTimeStart;
 
-        fEvent->fEventTimeWall = elapsed.count() / 1000;  // seconds
-        fEvent->fEventTimeWallPrimaryGeneration = fEventTimeWallPrimaryGeneration;
+        fEvent->fEventData.eventTimeWall = elapsed.count() / 1000.;  // seconds
+        fEvent->fEventData.eventTimeWallPrimaryGeneration = fEventTimeWallPrimaryGeneration;
 
         fSimulationManager->InsertEvent(fEvent);
         fSimulationManager->WriteEvents();
@@ -341,9 +347,9 @@ void OutputManager::RecordTrack(const G4Track* track) {
     }
     fEvent->InsertTrack(track);
 
-    if (fEvent->fSubEventID > 0) {
+    if (fEvent->fInfo.subEventID > 0) {
         //       const auto& lastTrack = ;
-        assert(fEvent->fTracks.back().GetTrackID() == track->GetTrackID());
+        assert(fEvent->fTracks.back()->GetTrackID() == track->GetTrackID());
         // TODO
         /*
         bool isSubEventPrimary = fEvent->IsTrackSubEventPrimary(lastTrack.fTrackID);

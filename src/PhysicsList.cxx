@@ -45,11 +45,11 @@
 using namespace std;
 
 namespace {
-TString GetParticleHPOptionValue(const TRestGeant4PhysicsLists* physicsLists, const TString& option,
-                                 const TString& defaultValue = "NotDefined") {
-    const vector<TString> hpPhysicsLists = {"G4HadronPhysicsQGSP_BIC_HP", "G4HadronElasticPhysicsHP"};
+std::string GetParticleHPOptionValue(const TRestGeant4PhysicsLists* physicsLists, const std::string& option,
+                                 const std::string& defaultValue = "NotDefined") {
+    const vector<std::string> hpPhysicsLists = {"G4HadronPhysicsQGSP_BIC_HP", "G4HadronElasticPhysicsHP"};
     for (const auto& physicsListName : hpPhysicsLists) {
-        const TString value = physicsLists->GetPhysicsListOptionValue(physicsListName, option, "NotDefined");
+        const auto value = physicsLists->GetPhysicsListOptionValue(physicsListName, option, "NotDefined");
         if (value != "NotDefined") {
             return value;
         }
@@ -59,14 +59,14 @@ TString GetParticleHPOptionValue(const TRestGeant4PhysicsLists* physicsLists, co
 
 using ParticleHPBoolSetter = void (G4ParticleHPManager::*)(G4bool);
 
-void ApplyParticleHPBooleanOption(const TRestGeant4PhysicsLists* physicsLists, const TString& option,
+void ApplyParticleHPBooleanOption(const TRestGeant4PhysicsLists* physicsLists, const std::string& option,
                                   const string& geant4Option, ParticleHPBoolSetter setter) {
-    const TString value = GetParticleHPOptionValue(physicsLists, option);
+    const auto value = GetParticleHPOptionValue(physicsLists, option);
     if (value == "NotDefined") {
         return;
     }
 
-    const G4bool boolValue = StringToBool(value.Data());
+    const G4bool boolValue = TRestTools::StringToBool(value);
     G4cout << "Setting ParticleHP option '" << geant4Option << "' to '" << (boolValue ? "true" : "false")
            << "'" << G4endl;
     auto* manager = G4ParticleHPManager::GetInstance();
@@ -111,14 +111,14 @@ void PhysicsList::InitializePhysicsLists() {
     // Decay physics and all particles
     if (fRestPhysicsLists->FindPhysicsList("G4DecayPhysics") >= 0) {
         fDecPhysicsList = new G4DecayPhysics();
-    } else if (fRestPhysicsLists->GetVerboseLevel() >= TRestStringOutput::REST_Verbose_Level::REST_Debug) {
+    } else if (fRestPhysicsLists->GetVerboseLevel() >= TRestLogManager::REST_Verbose_Level::REST_Debug) {
         G4cout << "restG4. PhysicsList. G4DecayPhysics is not enabled!!" << G4endl;
     }
 
     // RadioactiveDecay physicsList
     if (fRestPhysicsLists->FindPhysicsList("G4RadioactiveDecayPhysics") >= 0) {
         fRadDecPhysicsList = new G4RadioactiveDecayPhysics();
-    } else if (fRestPhysicsLists->GetVerboseLevel() >= TRestStringOutput::REST_Verbose_Level::REST_Debug) {
+    } else if (fRestPhysicsLists->GetVerboseLevel() >= TRestLogManager::REST_Verbose_Level::REST_Debug) {
         G4cout << "restG4. PhysicsList. G4RadioactiveDecayPhysics is not enabled!!" << G4endl;
     }
 
@@ -160,7 +160,7 @@ void PhysicsList::InitializePhysicsLists() {
         emCounter++;
     }
 
-    if (fRestPhysicsLists->GetVerboseLevel() >= TRestStringOutput::REST_Verbose_Level::REST_Essential &&
+    if (fRestPhysicsLists->GetVerboseLevel() >= TRestLogManager::REST_Verbose_Level::REST_Silent &&
         emCounter == 0) {
         RESTWarning << "PhysicsList: No EM physics list has been enabled" << RESTendl;
     }
@@ -261,22 +261,22 @@ void PhysicsList::ConstructProcess() {
         UI->ApplyCommand("/process/em/auger true");
         UI->ApplyCommand("/process/em/pixe true");
 
-        bool boolEmOptionPixe = StringToBool(
-            fRestPhysicsLists->GetPhysicsListOptionValue(fEmPhysicsListName.c_str(), "pixe", "false").Data());
+        bool boolEmOptionPixe = TRestTools::StringToBool(
+            fRestPhysicsLists->GetPhysicsListOptionValue(fEmPhysicsListName.c_str(), "pixe", "false"));
         string stringEmOptionPixe = (boolEmOptionPixe ? "true" : "false");
         G4cout << "Setting EM option '/process/em/pixe' to '" << stringEmOptionPixe << "' for physics list '"
                << fEmPhysicsListName << "'" << endl;
         UI->ApplyCommand(string("/process/em/pixe ") + stringEmOptionPixe);
 
-        bool boolEmOptionFluo = StringToBool(
-            fRestPhysicsLists->GetPhysicsListOptionValue(fEmPhysicsListName.c_str(), "fluo", "true").Data());
+        bool boolEmOptionFluo = TRestTools::StringToBool(
+            fRestPhysicsLists->GetPhysicsListOptionValue(fEmPhysicsListName.c_str(), "fluo", "true"));
         string stringEmOptionFluo = (boolEmOptionFluo ? "true" : "false");
         G4cout << "Setting EM option '/process/em/fluo' to '" << stringEmOptionFluo << "' for physics list '"
                << fEmPhysicsListName << "'" << endl;
         UI->ApplyCommand(string("/process/em/fluo ") + stringEmOptionFluo);
 
-        bool boolEmOptionAuger = StringToBool(
-            fRestPhysicsLists->GetPhysicsListOptionValue(fEmPhysicsListName.c_str(), "auger", "true").Data());
+        bool boolEmOptionAuger = TRestTools::StringToBool(
+            fRestPhysicsLists->GetPhysicsListOptionValue(fEmPhysicsListName.c_str(), "auger", "true"));
         string stringEmOptionAuger = (boolEmOptionAuger ? "true" : "false");
         G4cout << "Setting EM option '/process/em/auger' to '" << stringEmOptionAuger
                << "' for physics list '" << fEmPhysicsListName << "'" << endl;
@@ -326,7 +326,7 @@ void PhysicsList::ConstructProcess() {
             photonEvaporation->SetICM(false);
 #endif
         } else if (fRestPhysicsLists->GetVerboseLevel() >=
-                   TRestStringOutput::REST_Verbose_Level::REST_Essential) {
+                   TRestLogManager::REST_Verbose_Level::REST_Silent) {
             RESTWarning << "PhysicsList 'G4RadioactiveDecay' option 'ICM' not defined" << RESTendl;
         }
 
@@ -336,7 +336,7 @@ void PhysicsList::ConstructProcess() {
         } else if (fRestPhysicsLists->GetPhysicsListOptionValue("G4RadioactiveDecay", "ARM") == "false") {
             radioactiveDecay->SetARM(false);
         } else if (fRestPhysicsLists->GetVerboseLevel() >=
-                   TRestStringOutput::REST_Verbose_Level::REST_Essential) {
+                   TRestLogManager::REST_Verbose_Level::REST_Silent) {
             RESTWarning << "PhysicsList 'G4RadioactiveDecay' option 'ARM' not defined" << RESTendl;
         }
 
