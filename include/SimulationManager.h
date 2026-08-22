@@ -4,6 +4,7 @@
 
 #include <TRestGeant4Event.h>
 #include <TRestGeant4Metadata.h>
+#include <TRandom.h>
 #include <TRestGeant4PhysicsLists.h>
 #include <TRestGeant4Track.h>
 #include <TRestRun.h>
@@ -70,6 +71,7 @@ class SimulationManager {
     TRestRun* fRestRun = nullptr;
     TRestGeant4PhysicsLists* fRestGeant4PhysicsLists = nullptr;
     TRestGeant4Metadata* fRestGeant4Metadata = nullptr;
+    TRandom fDecayRandomMethod;
 
     int fNumberOfProcessedEvents = 0;
     int fNumberOfStoredEvents = 0;
@@ -115,6 +117,7 @@ class OutputManager {
     inline void ResetEventCounter() { fProcessedEventsCounter = 0; }
 
     void BeginOfEventAction();
+    void UpdatePrimaryData(const G4Event* event);
 
     int GetCurrentEventID() const { return fEvent->GetID(); }
 

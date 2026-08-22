@@ -16,14 +16,14 @@ g4Manager:
   geant4Metadata:
     class: "TRestGeant4Metadata"
     gdmlFilename: "./setup.gdml"
-    subEventTimeDelay: 100
+    subEventTimeDelay: 100 us
     seed: 17021981
     nEvents: 30000
     registerEmptyTracks: false
     saveAllEvents: false
     storeTracks: true
 
-    energyRangeStored: [0.0, 30.0]
+    energyRangeStored: [0.0, 30.0 keV]
     activateAllVolumes: false
     activeVolumes:
       - name: "detector"
@@ -34,8 +34,7 @@ g4Manager:
 
     generator:
       type: "point"
-      position: [0.0, 0.0, -200.0]
-      units: "mm"
+      position: [0.0, 0.0, -200.0 mm]
       source:
         particle: "e-"
         angular:
@@ -43,18 +42,17 @@ g4Manager:
           direction: [0.0, 0.0, 1.0]
         energy:
           type: "mono"
-          energy: 30.0
-          units: "keV"
+          energy: 30.0 keV
 
-  physicsLists:
+  physicsG4:
     class: "TRestGeant4PhysicsLists"
     cutForGamma: 0.01
     cutForElectron: 2.0
     cutForPositron: 1.0
     cutForMuon: 1.0
     cutForNeutron: 1.0
-    minEnergyRangeProductionCuts: 1.0
-    maxEnergyRangeProductionCuts: 1000000.0
+    minEnergyRangeProductionCuts: 1.0 keV
+    maxEnergyRangeProductionCuts: 1.0 MeV
 
     physicsList:
       - name: "G4EmStandardPhysics_option4"

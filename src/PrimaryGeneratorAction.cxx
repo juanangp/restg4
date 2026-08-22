@@ -51,6 +51,14 @@ PrimaryGeneratorAction::PrimaryGeneratorAction(SimulationManager* simulationMana
 
     TRestGeant4Metadata* restG4Metadata = fSimulationManager->GetRestMetadata();
     TRestGeant4ParticleSource* source = restG4Metadata->GetParticleSource(0);
+    fPrimaryGeneratorInfo = restG4Metadata->GetGeant4PrimaryGeneratorInfo();
+    long decaySeed = fPrimaryGeneratorInfo.fSeed;
+    if (decaySeed < 0) decaySeed = restG4Metadata->GetSeed();
+    fDecayRandomMethod.SetSeed(
+        static_cast<ULong_t>(decaySeed + G4Threading::G4GetThreadId()));
+    for (auto& localSource : fPrimaryGeneratorInfo.fParticleSources) {
+        localSource.SetRandomMethod(&fDecayRandomMethod);
+    }
 
     const auto& primaryGeneratorInfo = restG4Metadata->GetGeant4PrimaryGeneratorInfo();
     const string& spatialGeneratorTypeName = primaryGeneratorInfo.GetSpatialGeneratorType();
@@ -261,56 +269,54 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
     outputManager->SetEventTimeStart(start);
 
     lock_guard<mutex> lock(fPrimaryGenerationMutex);
+
+    std::vector<std::vector<TRestGeant4ParticleState>> generatedParticlesBySource;
+
     auto simulationManager = fSimulationManager;
     TRestGeant4Metadata* restG4Metadata = simulationManager->GetRestMetadata();
 
     if (restG4Metadata->GetVerboseLevel() >= TRestLogManager::REST_Verbose_Level::REST_Debug) {
         cout << "DEBUG: Primary generation" << endl;
     }
-    // We have to initialize here and not in start of the event because
-    // GeneratePrimaries is called first, and we want to store event origin and position inside
-    // we should have already written the information from previous event to disk (in endOfEventAction)
 
-
-    for (int i = 0; i < restG4Metadata->GetNumberOfSources(); i++) {
-        restG4Metadata->GetParticleSource(i)->Update();
-    }
+    long geant4Seed = restG4Metadata->GetSeed();
+    long decaySeed = fPrimaryGeneratorInfo.fSeed;
+    if (decaySeed < 0) decaySeed = geant4Seed;
 
     const auto& primaryGeneratorInfo = restG4Metadata->GetGeant4PrimaryGeneratorInfo();
     const string& spatialGeneratorTypeName = primaryGeneratorInfo.GetSpatialGeneratorType();
     const auto spatialGeneratorTypeEnum = StringToSpatialGeneratorTypes(spatialGeneratorTypeName);
     const auto spatialGeneratorShapeEnum =
         StringToSpatialGeneratorShapes(primaryGeneratorInfo.GetSpatialGeneratorShape());
-    // Apparently not used. I comment to avoid compilation warning
-    // Int_t nParticles = restG4Metadata->GetNumberOfSources();
+
+    fPrimaryGeneratorInfo.SetGeneratedParticleSeed(decaySeed);
+    fPrimaryGeneratorInfo.UpdateGeneratedParticles();
+    const size_t nSources = fPrimaryGeneratorInfo.fParticleSources.size();
+    generatedParticlesBySource.reserve(nSources);
+    for (size_t i = 0; i < nSources; ++i) {
+        generatedParticlesBySource.push_back(fPrimaryGeneratorInfo.GetGeneratedParticles(i));
+    }
 
     if (spatialGeneratorTypeEnum == SpatialGeneratorTypes::COSMIC) {
         if (fCosmicCircumscribedSphereRadius == 0.) {
-            // radius in mm
             fCosmicCircumscribedSphereRadius = fSimulationManager->GetRestMetadata()
                                                    ->GetGeant4PrimaryGeneratorInfo()
                                                    .GetSpatialGeneratorCosmicRadius();
         }
-
-        // This generator has correlated position / direction, so we need to use a different approach
         if (restG4Metadata->GetNumberOfSources() != 1) {
             cout << "PrimaryGeneratorAction - ERROR: cosmic generator only supports one source" << endl;
             exit(1);
         }
     }
-    // Set the particle(s)' position, multiple particles generated from multiple sources shall always have a
-    // same origin
 
-    // if sphere surface generator
     if (spatialGeneratorTypeEnum == SpatialGeneratorTypes::SURFACE &&
         spatialGeneratorShapeEnum == SpatialGeneratorShapes::SPHERE) {
-        // DO NOTHING! This is set elsewhere
     } else {
         SetParticlePosition();
     }
 
     for (int i = 0; i < restG4Metadata->GetNumberOfSources(); i++) {
-        vector<TRestGeant4Particle> particles = restG4Metadata->GetParticleSource(i)->GetParticles();
+        const auto& particles = generatedParticlesBySource.at(i);
         for (const auto& p : particles) {
             SetParticleDefinition(i, p);
             SetParticleEnergyAndDirection(i, p);
@@ -319,32 +325,28 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
                 const auto position = ComputeCosmicPosition(fParticleGun.GetParticleMomentumDirection(),
                                                             fCosmicCircumscribedSphereRadius);
                 fParticleGun.SetParticlePosition(position);
-            }
-
-            else if (spatialGeneratorTypeEnum == SpatialGeneratorTypes::SOURCE) {
+            } else if (spatialGeneratorTypeEnum == SpatialGeneratorTypes::SOURCE) {
                 G4ThreeVector position = {p.GetOrigin().X(), p.GetOrigin().Y(), p.GetOrigin().Z()};
                 fParticleGun.SetParticlePosition(position);
             }
 
             std::chrono::duration<double, std::milli> elapsed =
                 std::chrono::high_resolution_clock::now() - start;
-            // get output manager
             outputManager->SetEventTimeWallPrimaryGeneration(elapsed.count() / 1000.);
-
             fParticleGun.GeneratePrimaryVertex(event);
         }
     }
+
+    outputManager->UpdatePrimaryData(event);
 }
 
 G4ParticleDefinition* PrimaryGeneratorAction::SetParticleDefinition(Int_t particleSourceIndex,
-                                                                    const TRestGeant4Particle& particle) {
+                                                                    const TRestGeant4ParticleState& particle) {
     auto simulationManager = fSimulationManager;
     TRestGeant4Metadata* restG4Metadata = simulationManager->GetRestMetadata();
 
     auto particleName = (string)particle.GetParticleName();
-
-    Double_t excitedEnergy = (double)particle.GetExcitationLevel();  // in keV
-
+    Double_t excitedEnergy = (double)particle.GetExcitationLevel();
     Int_t charge = particle.GetParticleCharge();
 
     if (restG4Metadata->GetVerboseLevel() >= TRestLogManager::REST_Verbose_Level::REST_Debug) {
@@ -357,11 +359,9 @@ G4ParticleDefinition* PrimaryGeneratorAction::SetParticleDefinition(Int_t partic
     if (!fParticle || excitedEnergy > 0 || charge != 0) {
         fParticle = particleTable->FindParticle(particleName);
 
-        // There might be a better way to do this
         for (int Z = 1; Z <= 110; Z++) {
             for (int A = 2 * Z - 1; A <= 3 * Z; A++) {
                 if (particleName == G4IonTable::GetIonTable()->GetIonName(Z, A)) {
-                    // excited energy is in rest units keV, when input to geant4, we shall convert to MeV
                     fParticle = G4IonTable::GetIonTable()->GetIon(Z, A, excitedEnergy / 1000);
                     particleName = G4IonTable::GetIonTable()->GetIonName(Z, A, excitedEnergy / 1000);
                     fParticleGun.SetParticleCharge(charge);
@@ -377,17 +377,18 @@ G4ParticleDefinition* PrimaryGeneratorAction::SetParticleDefinition(Int_t partic
     }
 
     fParticleGun.SetParticleDefinition(fParticle);
-
     return fParticle;
 }
 
 void PrimaryGeneratorAction::SetParticleDirection(Int_t particleSourceIndex,
-                                                  const TRestGeant4Particle& particle) {
+                                                  const TRestGeant4ParticleState& particle) {
     auto simulationManager = fSimulationManager;
     TRestGeant4Metadata* restG4Metadata = simulationManager->GetRestMetadata();
     TRestGeant4ParticleSource* source = restG4Metadata->GetParticleSource(0);
 
-    const auto sourceDirection = source->GetDirection();
+    const auto& sourceDirectionData = source->fAngularDistribution.fDirection;
+    const ROOT::Math::XYZVector sourceDirection(sourceDirectionData[0], sourceDirectionData[1],
+                                                sourceDirectionData[2]);
     G4ThreeVector direction = {sourceDirection.X(), sourceDirection.Y(), sourceDirection.Z()};
 
     const auto& primaryGeneratorInfo = restG4Metadata->GetGeant4PrimaryGeneratorInfo();
@@ -489,7 +490,7 @@ void PrimaryGeneratorAction::SetParticleDirection(Int_t particleSourceIndex,
 }
 
 void PrimaryGeneratorAction::SetParticleEnergy(Int_t particleSourceIndex,
-                                               const TRestGeant4Particle& particle) {
+                                               const TRestGeant4ParticleState& particle) {
     auto simulationManager = fSimulationManager;
 
     TRestGeant4Metadata* restG4Metadata = simulationManager->GetRestMetadata();
@@ -827,7 +828,7 @@ void PrimaryGeneratorAction::GenPositionOnDisk(double& x, double& y, double& z) 
 }
 
 void PrimaryGeneratorAction::SetParticleEnergyAndDirection(Int_t particleSourceIndex,
-                                                           const TRestGeant4Particle& particle) {
+                                                           const TRestGeant4ParticleState& particle) {
     auto simulationManager = fSimulationManager;
 
     TRestGeant4Metadata* restG4Metadata = simulationManager->GetRestMetadata();
@@ -880,8 +881,8 @@ void PrimaryGeneratorAction::SetParticleEnergyAndDirection(Int_t particleSourceI
         exit(1);
     }
 
-    G4ThreeVector direction = {source->GetDirection().X(), source->GetDirection().Y(),
-                               source->GetDirection().Z()};
+    const auto& sourceDirectionData = source->fAngularDistribution.fDirection;
+    G4ThreeVector direction = {sourceDirectionData[0], sourceDirectionData[1], sourceDirectionData[2]};
 
     G4ThreeVector referenceOrigin = direction;
     direction.rotate(angle, direction.orthogonal());

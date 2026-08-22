@@ -19,6 +19,7 @@
 
 #include <G4UImanager.hh>
 #include <G4VSteppingVerbose.hh>
+#include "G4Version.hh"
 #include <cstdlib>
 #include <filesystem>
 
@@ -320,8 +321,6 @@ void Application::Run(const CommandLineOptions::Options& options) {
     auto* g4Manager = new TRestGeant4Manager(findNode.first, findNode.second);
     g4Manager->PrintMetadata();
 
-    g4Manager->fG4Metadata->PrintMetadata();
-
     auto metadata = g4Manager->fG4Metadata;
     if (metadata == nullptr) {
         std::cerr << "ERROR: TRestGeant4Metadata is null, check cfg file." << std::endl;
@@ -353,7 +352,7 @@ void Application::Run(const CommandLineOptions::Options& options) {
         metadata->SetGdmlFilename(options.geometryFile);
     }
 
-        std::string gdmlPath = metadata->GetGdmlFilename();
+    std::string gdmlPath = TRestTools::GetFullPath(metadata->GetGdmlFilename());
 
     // Check if the file exists locally; if not, look for it using the geometry paths registry
     if (!TRestTools::fileExists(gdmlPath)) {
@@ -370,11 +369,6 @@ void Application::Run(const CommandLineOptions::Options& options) {
 
     // Update metadata members with the definitive resolved paths for proper logging and storage
     metadata->SetGdmlFilename(gdmlPath);
-    metadata->SetGeometryPath("");
-
-    // Register deterministic tracking references using framework file hashes
-    metadata->SetGdmlReference(TRestTools::GetFullPath(gdmlPath));
-    metadata->SetMaterialsReference(TRestTools::GetFullPath(gdmlPath));
 
     fSimulationManager.SetRestPhysicsLists(g4Manager->fG4PhysicsLists);
 
@@ -397,10 +391,6 @@ void Application::Run(const CommandLineOptions::Options& options) {
     }
 
     run->SetRunType("restG4");
-
-    //run->AddMetadata(fSimulationManager.GetRestMetadata());
-    //run->AddMetadata(fSimulationManager.GetRestPhysicsLists());
-    run->PrintMetadata();
 
     run->FormOutputFile();
     if (run->fOutputFile == nullptr || !run->fOutputFile->IsWritable()) {
@@ -462,8 +452,15 @@ void Application::Run(const CommandLineOptions::Options& options) {
     G4VisManager* visManager = new G4VisExecutive;
     visManager->Initialize();
 #endif
-    const std::string g4Version = runManager->GetVersionString().data();
-    metadata->SetGeant4Version(g4Version);
+    int major = G4VERSION_NUMBER / 100;       // Ej: 1102 / 100 = 11
+    int minor = (G4VERSION_NUMBER % 100) / 10; // Ej: (1102 % 100) -> 02 / 10 = 0
+    int patch = G4VERSION_NUMBER % 10;        // Ej: 1102 % 10 = 2
+
+    std::string shortVersion = "4." + std::to_string(major) + "." + 
+                           std::to_string(minor) + "." + 
+                           std::to_string(patch);
+
+    metadata->SetGeant4Version(shortVersion);
 
     const auto nEvents = metadata->GetNumberOfEvents();
     if (nEvents < 0) {
@@ -519,39 +516,18 @@ void Application::Run(const CommandLineOptions::Options& options) {
 
     metadata->SetSimulationWallTime(fSimulationManager.GetElapsedTime());
 
-/*    if (metadata->GetNumberOfSources() == 1 &&
-        string(metadata->GetParticleSource(0)->GetName()) == "TRestGeant4ParticleSourceCosmics") {
-        auto source = dynamic_cast<TRestGeant4ParticleSourceCosmics*>(metadata->GetParticleSource(0));
-        auto histogramsTransformed = source->GetHistogramsTransformed();
-        double totalParticlesPerUnitTimePerSurface = 0;
-        for (const auto& [name, histogram] : histogramsTransformed) {
-            totalParticlesPerUnitTimePerSurface += histogram->Integral();
-        }
-        const auto nParticlesLaunched = static_cast<double>(metadata->GetNumberOfEvents());
-        const double equivalentSurface =
-            metadata->GetGeant4PrimaryGeneratorInfo().GetSpatialGeneratorCosmicSurfaceTermCm2();
-        const double time = nParticlesLaunched / (totalParticlesPerUnitTimePerSurface * equivalentSurface);
-        cout << "Cosmic generator summary:" << endl;
-        cout << " - Total particles launched: " << nParticlesLaunched << endl;
-        cout << " - Total particles per second per cm2: " << totalParticlesPerUnitTimePerSurface << endl;
-        cout << " - Equivalent surface: " << equivalentSurface << " cm2" << endl;
-        cout << " - Total time to launch all particles: " << time << " s" << endl;
-        cout << " - Counts per second: " << double(run->GetEntries()) / time << endl;
-        cout << " - Counts per second (wall time): "
-             << double(run->GetEntries()) / fSimulationManager.GetElapsedTime() << endl;
-    }
-*/
     metadata->SetSimulationWallTime(fSimulationManager.GetElapsedTime());
 
-    run->AddMetadata(run->GetName(), run->GetYAMLNode());
-    run->AddMetadata(fSimulationManager.GetRestMetadata()->GetName(), fSimulationManager.GetRestMetadata()->GetYAMLNode());
-    run->AddMetadata(fSimulationManager.GetRestPhysicsLists()->GetName(), fSimulationManager.GetRestPhysicsLists()->GetYAMLNode());
-    //Add more?
+    //run->AddMetadata(fSimulationManager.GetRestMetadata());
+    //run->AddMetadata(fSimulationManager.GetRestPhysicsLists());
+    //run->PrintMetadata();
+    g4Manager->SaveMetadata();
+    
 
     //run->UpdateOutputFile();
     run->CloseFiles();
 
-    run->PrintMetadata();
+    g4Manager->PrintMetadata();
 
     const auto nEventsAtEnd =
         metadata->GetNumberOfEvents();  // This could be different from original if exit early

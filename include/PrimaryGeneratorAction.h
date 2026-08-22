@@ -5,7 +5,9 @@
 #include <TF3.h>
 #include <TH1D.h>
 #include <TRandom.h>
-#include <TRestGeant4Particle.h>
+#include <TRestGeant4ParticleState.h>
+#include <TRestGeant4PrimaryGeneratorInfo.h>
+#include <TRestGeant4PrimaryGeneratorInfo.h>
 
 #include <G4IonTable.hh>
 #include <G4ParticleGun.hh>
@@ -38,8 +40,10 @@ class PrimaryGeneratorAction : public G4VUserPrimaryGeneratorAction {
 
     static std::mutex fDistributionFormulaMutex;
     static std::mutex fPrimaryGenerationMutex;
+    TRestGeant4PrimaryGeneratorInfo fPrimaryGeneratorInfo;
+    TRandom fDecayRandomMethod;
 
-    std::vector<TRestGeant4Particle> fTempParticles;
+    std::vector<TRestGeant4ParticleState> fTempParticles;
 
     G4ParticleGun fParticleGun;
     G4ParticleDefinition* fParticle = nullptr;
@@ -67,11 +71,11 @@ class PrimaryGeneratorAction : public G4VUserPrimaryGeneratorAction {
 
     void SetParticlePosition();
     G4ParticleDefinition* SetParticleDefinition(Int_t particleSourceIndex,
-                                                const TRestGeant4Particle& particle);
-    void SetParticleEnergy(Int_t particleSourceIndex, const TRestGeant4Particle& particle);
-    void SetParticleDirection(Int_t particleSourceIndex, const TRestGeant4Particle& particle);
+                                                const TRestGeant4ParticleState& particle);
+    void SetParticleEnergy(Int_t particleSourceIndex, const TRestGeant4ParticleState& particle);
+    void SetParticleDirection(Int_t particleSourceIndex, const TRestGeant4ParticleState& particle);
 
-    void SetParticleEnergyAndDirection(Int_t particleSourceIndex, const TRestGeant4Particle& particle);
+    void SetParticleEnergyAndDirection(Int_t particleSourceIndex, const TRestGeant4ParticleState& particle);
 
     G4ThreeVector GetIsotropicVector() const;
 

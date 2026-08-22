@@ -32,6 +32,11 @@ void PeriodicPrint(SimulationManager* simulationManager) {
     while (!simulationManager->GetPeriodicPrintThreadEndFlag()) {
         std::this_thread::sleep_for(std::chrono::seconds(2));
 
+        if (!restG4Metadata->PrintProgress() &&
+            restG4Metadata->GetVerboseLevel() < TRestLogManager::REST_Verbose_Level::REST_Silent) {
+            continue;
+        }
+
         for (auto& outputManager : simulationManager->GetOutputManagerContainer()) {
             simulationManager->SyncStatsFromChild(outputManager);
         }
@@ -88,19 +93,24 @@ void PeriodicPrint(SimulationManager* simulationManager) {
     }
 }
 
-int interruptSignalHandler(const int, void* ptr) {
-    // See https://stackoverflow.com/a/43400143/11776908
-    cout << "Stopping Run! Program was manually stopped by user (CTRL+C)!" << endl;
-    const auto manager = (SimulationManager*)(ptr);
-    manager->StopSimulation();
-    return 0;
+static SimulationManager* gCurrentSimulationManager = nullptr;
+
+void interruptSignalHandler(int sig) {
+    cout << "\nStopping Run! Program was manually stopped by user (CTRL+C)!" << endl;
+    
+    if (gCurrentSimulationManager) {
+        gCurrentSimulationManager->StopSimulation();
+    }
 }
 
 void SimulationManager::BeginOfRunAction() {
     if (G4Threading::IsMultithreadedApplication() && G4Threading::G4GetThreadId() != -1) {
-        return;  // Only call this once from the main thread
+        return;
     }
-    signal(SIGINT, (void (*)(int))interruptSignalHandler);  // Add custom signal handler before simulation
+    
+    gCurrentSimulationManager = this;
+    
+    std::signal(SIGINT, interruptSignalHandler);
 
     fTimeStartUnix = chrono::steady_clock::now().time_since_epoch().count();
 #ifndef GEANT4_WITHOUT_G4RunManagerFactory
@@ -179,15 +189,17 @@ void SimulationManager::WriteEvents() {
 }
 
 void SimulationManager::InitializeUserDistributions() {
-    auto random = []() { return (double)G4UniformRand(); };
 
     if (fRestGeant4Metadata == nullptr || fRestGeant4Metadata->GetNumberOfSources() == 0) {
         std::cout << "No particle sources or user distributions registered. Exiting..." << std::endl;
         exit(1); 
     }
-
+    long geant4Seed = fRestGeant4Metadata->GetSeed();
+    long decaySeed = fRestGeant4Metadata->GetGeant4PrimaryGeneratorInfo().fSeed;
+    if (decaySeed == 0) decaySeed = geant4Seed;
+    fDecayRandomMethod.SetSeed(static_cast<ULong_t>(decaySeed));
     for (int i = 0; i < fRestGeant4Metadata->GetNumberOfSources(); i++) {
-        fRestGeant4Metadata->GetParticleSource(i)->SetRandomMethod(random);
+        fRestGeant4Metadata->GetParticleSource(i)->SetRandomMethod(&fDecayRandomMethod);
     }
 
     TRestGeant4ParticleSource* source = fRestGeant4Metadata->GetParticleSource(0);
@@ -249,6 +261,10 @@ OutputManager::OutputManager(const SimulationManager* simulationManager)
         G4cout << "Error in 'OutputManager', this instance should never exist" << endl;
         exit(1);
     }
+}
+
+void OutputManager::UpdatePrimaryData(const G4Event* event) {
+    if (fEvent) fEvent->UpdatePrimaryData(event);
 }
 
 void OutputManager::BeginOfEventAction() {
@@ -325,10 +341,11 @@ bool OutputManager::IsValidEvent() const {
 void OutputManager::FinishAndSubmitEvent() {
     if (IsValidEvent()) {
 
-        if (fSimulationManager->GetRestMetadata()->GetRemoveUnwantedTracks()) {
+        if (fSimulationManager->GetRestMetadata()->GetRemoveUnwantedTracks())
             RemoveUnwantedTracks();
-        }
+
         fEvent->SyncTracksToEventData();
+
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> elapsed = end - fEventTimeStart;
 

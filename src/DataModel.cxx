@@ -33,6 +33,32 @@ TRestGeant4Event::TRestGeant4Event(const G4Event* event) : TRestGeant4Event() {
 
 }
 
+void TRestGeant4Event::UpdatePrimaryData(const G4Event* event) {
+    if (!event) return;
+
+    auto* primaryVertex = event->GetPrimaryVertex();
+    if (!primaryVertex) return;
+
+    fEventData.primaryParticleNames.clear();
+    fEventData.primaryEnergies.clear();
+    fEventData.primaryDirections.clear();
+
+    const auto& position = primaryVertex->GetPosition();
+    fEventData.primaryPosition = {position.x() / CLHEP::mm, position.y() / CLHEP::mm,
+                                  position.z() / CLHEP::mm};
+
+    for (int i = 0; i < primaryVertex->GetNumberOfParticle(); ++i) {
+        const auto* primaryParticle = primaryVertex->GetPrimary(i);
+        if (!primaryParticle || !primaryParticle->GetParticleDefinition()) continue;
+
+        fEventData.primaryParticleNames.emplace_back(
+            primaryParticle->GetParticleDefinition()->GetParticleName());
+        fEventData.primaryEnergies.emplace_back(primaryParticle->GetKineticEnergy() / CLHEP::keV);
+        const auto& direction = primaryParticle->GetMomentumDirection();
+        fEventData.primaryDirections.emplace_back(direction.x(), direction.y(), direction.z());
+    }
+}
+
 bool TRestGeant4Event::InsertTrack(const G4Track* track) {
     if (!track) return false;
 
@@ -289,43 +315,6 @@ void TRestGeant4Hits::InsertStep(const G4Step* step) {
                                                                                   particleName.c_str(), processName.c_str());
 }
 
-void TRestGeant4Event::SyncTracksToEventData() {
-    auto preservedData = fEventData;
-    preservedData.trackIDs.clear();
-    preservedData.parentIDs.clear();
-    preservedData.trackParticleNames.clear();
-    preservedData.trackCreatorProcesses.clear();
-    preservedData.trackInitialEnergies.clear();
-    preservedData.trackStartIndices.clear();
-    preservedData.trackNHits.clear();
-    fEventData.hitsStorage.clear();
-
-    fEventData = preservedData;
-    for (const auto& track : fTracks) {
-        fEventData.trackStartIndices.push_back(static_cast<int>(fEventData.hitsStorage.x.size()));
-        const auto& hits = track->GetHits();
-
-        fEventData.trackIDs.push_back(track->GetTrackID());
-        fEventData.parentIDs.push_back(track->GetParentID());
-        fEventData.trackParticleNames.push_back(track->GetParticleName());
-        fEventData.trackCreatorProcesses.push_back(track->GetCreatorProcess());
-        fEventData.trackInitialEnergies.push_back(track->GetInitialKineticEnergy());
-        fEventData.trackDepositedEnergy.push_back(hits.GetTotalEnergy());
-        fEventData.trackNHits.push_back(static_cast<int>(hits.GetNumberOfHits()));
-
-        for (size_t i = 0; i < hits.GetNumberOfHits(); ++i) {
-            fEventData.hitsStorage.x.push_back(static_cast<float>(hits.GetX(i)));
-            fEventData.hitsStorage.y.push_back(static_cast<float>(hits.GetY(i)));
-            fEventData.hitsStorage.z.push_back(static_cast<float>(hits.GetZ(i)));
-            fEventData.hitsStorage.energy.push_back(static_cast<float>(hits.GetEnergy(i)));
-            fEventData.hitsStorage.time.push_back(static_cast<float>(hits.GetTime(i)));
-            fEventData.hitsStorage.type.push_back(static_cast<int>(hits.GetType(i)));
-        }
-    }
-
-    RefreshViews();
-}
-
 void OutputManager::RemoveUnwantedTracks() {
     const auto& metadata = fSimulationManager->GetRestMetadata();
     set<int> trackIDsToKeep;  // We populate this container with the tracks we want to keep
@@ -375,7 +364,7 @@ void OutputManager::RemoveUnwantedTracks() {
         fEvent->GetTrackIDToTrackIndex()[fEvent->GetTracks()[i]->GetTrackID()] = i;
     }
 
-    fEvent->SyncTracksToEventData();
+    //fEvent->SyncTracksToEventData();
 
     /*
     const size_t numberOfTracksAfter = fEvent->GetTracks().size();
