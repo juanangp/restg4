@@ -15,8 +15,12 @@ thread_local OutputManager* SimulationManager::fOutputManager = nullptr;
 SimulationManager::SimulationManager() {
     // Only master thread should create the SimulationManager
     if (!G4Threading::IsMasterThread()) {
-        cout << "Only master thread should create the SimulationManager!" << endl;
-        exit(1);
+        G4Exception(
+              "SimulationManager::SimulationManager",
+              "REST_G4_MASTER_THREAD",
+              FatalException,
+              "Only master thread should create the SimulationManager!" 
+            );
     }
 }
 
@@ -169,7 +173,7 @@ void SimulationManager::WriteEvents() {
     }
 
     while (!fEventContainer.empty()) {
-        fEvent = *fEventContainer.front();
+        fEvent.MoveFrom(std::move(*fEventContainer.front()));
 
         if (!fRestGeant4Metadata->GetStoreTracks()) {
             fEvent.ClearTracks();
@@ -191,8 +195,12 @@ void SimulationManager::WriteEvents() {
 void SimulationManager::InitializeUserDistributions() {
 
     if (fRestGeant4Metadata == nullptr || fRestGeant4Metadata->GetNumberOfSources() == 0) {
-        std::cout << "No particle sources or user distributions registered. Exiting..." << std::endl;
-        exit(1); 
+        G4Exception(
+            "SimulationManager::InitializeUserDistributions",
+            "REST_G4_NO_PARTICLE_SOURCE",
+            FatalException,
+            "No particle sources or user distributions registered."
+        );
     }
     long geant4Seed = fRestGeant4Metadata->GetSeed();
     long decaySeed = fRestGeant4Metadata->GetGeant4PrimaryGeneratorInfo().fSeed;
@@ -211,10 +219,17 @@ void SimulationManager::InitializeUserDistributions() {
         auto distribution = (TH1D*)file.Get(source->GetEnergyDistributionNameInFile().c_str());
 
         if (!distribution) {
-            RESTError << "Error when trying to find energy spectrum" << RESTendl;
-            RESTError << "File: " << source->GetEnergyDistributionFilename() << RESTendl;
-            RESTError << "Spectrum name: " << source->GetEnergyDistributionNameInFile() << RESTendl;
-            exit(1);
+            std::ostringstream errMsg;
+            errMsg << "\n---------------------------------------------------------\n"
+               << "Error when trying to find energy spectrum\n"
+               << "File: " << source->GetEnergyDistributionFilename() << "\n"
+               << "Spectrum name: " << source->GetEnergyDistributionNameInFile();
+            G4Exception(
+              "SimulationManager::InitializeUserDistributions",
+              "REST_G4_NO_ENERGY_SPECTRUM",
+              FatalException,
+              errMsg.str().c_str() 
+            );
         }
 
         fPrimaryEnergyDistribution = *distribution;
@@ -227,10 +242,17 @@ void SimulationManager::InitializeUserDistributions() {
         auto distribution = (TH1D*)file.Get(source->GetAngularDistributionNameInFile().c_str());
 
         if (!distribution) {
-            RESTError << "Error when trying to find angular spectrum" << RESTendl;
-            RESTError << "File: " << source->GetAngularDistributionFilename() << RESTendl;
-            RESTError << "Spectrum name: " << source->GetAngularDistributionNameInFile() << RESTendl;
-            exit(1);
+            std::ostringstream errMsg;
+            errMsg << "\n---------------------------------------------------------\n"
+               << "Error when trying to find angular spectrum\n"
+               << "File: " << source->GetAngularDistributionFilename() << "\n"
+               << "Spectrum name: " << source->GetAngularDistributionNameInFile();
+            G4Exception(
+              "SimulationManager::InitializeUserDistributions",
+              "REST_G4_NO_ANGULAR_SPECTRUM",
+              FatalException,
+              errMsg.str().c_str() 
+            );
         }
 
         fPrimaryAngularDistribution = *distribution;
@@ -258,8 +280,12 @@ OutputManager::OutputManager(const SimulationManager* simulationManager)
     : fSimulationManager(const_cast<SimulationManager*>(simulationManager)) {
     // this class should only exist on the threads performing the simulation
     if (G4Threading::IsMasterThread() && G4Threading::IsMultithreadedApplication()) {
-        G4cout << "Error in 'OutputManager', this instance should never exist" << endl;
-        exit(1);
+            G4Exception(
+              "OutputManager::OutputManager",
+              "REST_G4_MULTITHREADING",
+              FatalException,
+              "Error in 'OutputManager', this instance should never exist"
+            );
     }
 }
 
@@ -289,21 +315,33 @@ void OutputManager::BeginOfEventAction() {
 
 void OutputManager::UpdateEvent() {
     auto event = G4EventManager::GetEventManager()->GetConstCurrentEvent();
-    fEvent = make_unique<TRestGeant4Event>(event);
+    
+    if (!fEvent) {
+        fEvent = make_unique<TRestGeant4Event>(event);
+    } else {
+        fEvent->ClearTracks();
+        fEvent->SetID(event->GetEventID());
+    }
 
     if (fSimulationManager->GetRestMetadata() != nullptr) {
         fEvent->SetGeant4Metadata(fSimulationManager->GetRestMetadata());
     }
 
     if (fSimulationManager->GetRestRun() != nullptr) {
-        fEvent->SetRunOrigin(fSimulationManager->GetRestRun()->GetRunNumber());
-        fEvent->SetSubRunOrigin(fSimulationManager->GetRestRun()->GetSubRunNumber());
+        fEvent->InitializeReferences(fSimulationManager->GetRestRun());
     }
 
     const auto metadata = fSimulationManager->GetRestMetadata();
     if (metadata == nullptr) {
-        cout << "TRestGeant4Event: Missing Geant4 metadata for event ID: " << fEvent->GetID() << endl;
-        exit(1);
+        std::ostringstream errMsg;
+            errMsg << "\n---------------------------------------------------------\n"
+               << "TRestGeant4Event: Missing Geant4 metadata for event ID: " << fEvent->GetID();
+            G4Exception(
+              "OutputManager::UpdateEvent",
+              "REST_G4_MISSING_METADATA",
+              FatalException,
+              errMsg.str().c_str() 
+            );
     }
 
     const auto primaryVertex = event->GetPrimaryVertex();
@@ -311,10 +349,16 @@ void OutputManager::UpdateEvent() {
     const int numberOfSources = metadata->GetNumberOfSources();
 
     if (primaryParticles != numberOfSources && int(fEvent->GetNumberOfPrimaries()) != numberOfSources) {
-        cout << "TRestGeant4Event: Number of particles on primary vertex does not match number of sources "
-                "for event ID: "
-             << fEvent->GetID() << endl;
-        exit(1);
+        std::ostringstream errMsg;
+            errMsg << "\n---------------------------------------------------------\n"
+            << "TRestGeant4Event: Number of particles on primary vertex does not match number of sources for event ID: "
+             << fEvent->GetID();
+            G4Exception(
+              "OutputManager::UpdateEvent",
+              "REST_G4_SOURCE_MISTMATCH",
+              FatalException,
+              errMsg.str().c_str() 
+            );
     }
 }
 
@@ -365,20 +409,7 @@ void OutputManager::RecordTrack(const G4Track* track) {
     fEvent->InsertTrack(track);
 
     if (fEvent->fInfo.subEventID > 0) {
-        //       const auto& lastTrack = ;
         assert(fEvent->fTracks.back()->GetTrackID() == track->GetTrackID());
-        // TODO
-        /*
-        bool isSubEventPrimary = fEvent->IsTrackSubEventPrimary(lastTrack.fTrackID);
-        if (isSubEventPrimary) {
-            spdlog::debug(
-                "OutputManager::RecordTrack - Setting track ID {} as SubEventPrimaryTrack of EventID {} "
-                "(SubEventID {}). Track info: {} - Created by "
-                "{} - ParentID: {}",
-                lastTrack.fTrackID, fEvent->fEventID, fEvent->fSubEventID, lastTrack.fParticleName,
-                lastTrack.fCreatorProcess, lastTrack.fParentID);
-        }
-         */
     }
 }
 
@@ -393,10 +424,6 @@ void OutputManager::RecordStep(const G4Step* step) { fEvent->InsertStep(step); }
 
 void OutputManager::AddSensitiveEnergy(Double_t energy) {
     fEvent->AddEnergyToSensitiveVolume(energy);
-    /*
-        const TString physicalVolumeNameNew = fSimulationManager->GetRestMetadata()->GetGeant4GeometryInfo()
-                                                  .GetAlternativeNameFromGeant4PhysicalName(physicalVolumeName);
-                                                  */
 }
 
 void OutputManager::AddEnergyToVolumeForParticleForProcess(Double_t energy, const char* volumeName,

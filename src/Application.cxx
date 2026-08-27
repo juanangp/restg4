@@ -405,6 +405,7 @@ void Application::Run(const CommandLineOptions::Options& options) {
     long seed = metadata->GetSeed();
     CLHEP::HepRandom::setTheSeed(seed);
 
+    G4VSteppingVerbose::SetInstance(new SteppingVerbose(&fSimulationManager));
 
 #ifndef GEANT4_WITHOUT_G4RunManagerFactory
     auto runManagerType = G4RunManagerType::Default;

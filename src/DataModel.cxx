@@ -64,6 +64,15 @@ bool TRestGeant4Event::InsertTrack(const G4Track* track) {
 
     const bool hasInitialStep = fInitialStep.GetNumberOfHits() == 1;
 
+   if (!hasInitialStep) {
+        G4Exception(
+            "TRestGeant4Event::InsertStep",
+            "REST_G4_MISSING_INITIAL_STEP",
+            FatalException,
+            "Track has no initial step! SteppingVerbose pipeline is broken for this thread."
+        );
+    }
+
     if ((fTracks.empty() && IsSubEvent()) ||
         (fTracks.empty() && !IsSubEvent() && GetGeant4Metadata()->GetNumberOfSources() == 1)) {
         fEventData.subEventParticleName = track->GetParticleDefinition()->GetParticleName();
@@ -107,33 +116,13 @@ void TRestGeant4Event::InsertStep(const G4Step* step) {
     if (!step) return;
 
     if (step->GetTrack()->GetCurrentStepNumber() == 0) {
-        if (fInitialStep.GetNumberOfHits() == 0) {
-            fInitialStep.RemoveG4Hits();
-            fInitialStep.SetEvent(this);
-            fInitialStep.InsertStep(step);
-        } else {
-            // Optional: If Geant4 sends an update for the same step 0, we append instead of wiping out,
-            // or simply ignore it if we only want the pure birth checkpoint.
-            // For strict 1-hit alignment, ignoring duplicate init calls is the standard practice.
-            return; 
-        }
+        fInitialStep = TRestGeant4Hits();
+        fInitialStep.SetEvent(this);
+        fInitialStep.InsertStep(step);
     } else {
-        const auto trackId = step->GetTrack()->GetTrackID();
-        
-        auto trackIt = std::find_if(fTracks.begin(), fTracks.end(), [trackId](const TRestGeant4Track* track) {
-            return track != nullptr && track->GetTrackID() == trackId;
-        });
-        
-        if (trackIt != fTracks.end()) {
-            (*trackIt)->InsertStep(step);
-        } else {
-            RESTError << "TRestGeant4Event::InsertStep - Track ID " << trackId << " was not registered" << RESTendl;
-            return;
-        }
+        fTracks.back()->InsertStep(step);
     }
 }
-
-
 
 bool OutputManager::IsValidTrack(const G4Track*) const { return true; }
 
@@ -168,8 +157,12 @@ void TRestGeant4Track::InsertStep(const G4Step* step) { fHits.InsertStep(step); 
 
 void TRestGeant4Track::UpdateTrack(const G4Track* track) {
     if (track->GetTrackID() != fTrackID) {
-        G4cout << "Geant4Track::UpdateTrack - mismatch of trackID!" << endl;
-        exit(1);
+        G4Exception(
+            "TRestGeant4Track::UpdateTrack",
+            "REST_G4_TRACK_ID_MISMATCH",
+            FatalException,
+            "Mistmatch of trackID while updating track"
+        );
     }
 
     fLength = track->GetTrackLength() / CLHEP::mm;
@@ -280,12 +273,19 @@ void TRestGeant4Hits::InsertStep(const G4Step* step) {
     const Double_t hitGlobalTime = track->GetGlobalTime() / CLHEP::microsecond;
     const G4ThreeVector& momentum = track->GetMomentumDirection();
 
-    AddHit(hitPosition, energy, hitGlobalTime, TRestHitsData::REST_HitType::unknown);  // this increases fNHits
+    AddHit(hitPosition, energy, hitGlobalTime, TRestHitsData::REST_HitType::XYZ);
 
-    fProcessID.emplace_back(processID);
-    fVolumeID.emplace_back(geometryInfo.GetIDFromVolume(volumeName));
-    fKineticEnergy.emplace_back(track->GetKineticEnergy() / CLHEP::keV);
-    fMomentumDirection.emplace_back(momentum.x(), momentum.y(), momentum.z());
+    if (fIsView) {
+        if (fMappedProcessID) fMappedProcessID->emplace_back(processID);
+        if (fMappedVolumeID) fMappedVolumeID->emplace_back(geometryInfo.GetIDFromVolume(volumeName));
+        if (fMappedKineticEnergy) fMappedKineticEnergy->emplace_back(track->GetKineticEnergy() / CLHEP::keV);
+        if (fMappedMomentumDirection) fMappedMomentumDirection->emplace_back(momentum.x(), momentum.y(), momentum.z());
+    } else {
+        fProcessID.emplace_back(processID);
+        fVolumeID.emplace_back(geometryInfo.GetIDFromVolume(volumeName));
+        fKineticEnergy.emplace_back(track->GetKineticEnergy() / CLHEP::keV);
+        fMomentumDirection.emplace_back(momentum.x(), momentum.y(), momentum.z());
+    }
 
     string isotopeName;
     int atomicNumber = 0;
@@ -306,9 +306,15 @@ void TRestGeant4Hits::InsertStep(const G4Step* step) {
     }
 
     if (metadata->GetStoreHadronicTargetInfo()) {
-        fHadronicTargetIsotopeName.emplace_back(isotopeName);
-        fHadronicTargetIsotopeZ.emplace_back(atomicNumber);
-        fHadronicTargetIsotopeA.emplace_back(atomicMassNumber);
+        if (fIsView) {
+            if (fMappedHadronicTargetIsotopeName) fMappedHadronicTargetIsotopeName->emplace_back(isotopeName);
+            if (fMappedHadronicTargetIsotopeZ) fMappedHadronicTargetIsotopeZ->emplace_back(atomicNumber);
+            if (fMappedHadronicTargetIsotopeA) fMappedHadronicTargetIsotopeA->emplace_back(atomicMassNumber);
+        } else {
+            fHadronicTargetIsotopeName.emplace_back(isotopeName);
+            fHadronicTargetIsotopeZ.emplace_back(atomicNumber);
+            fHadronicTargetIsotopeA.emplace_back(atomicMassNumber);
+        }
     }
 
     SimulationManager::GetOutputManager()->AddEnergyToVolumeForParticleForProcess(energy, volumeName.c_str(),
