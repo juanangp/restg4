@@ -90,8 +90,12 @@ PrimaryGeneratorAction::PrimaryGeneratorAction(SimulationManager* simulationMana
                 newRangeXMax = source->GetEnergyDistributionRangeMax();
             }
             if (newRangeXMin == newRangeXMax || newRangeXMin > newRangeXMax) {
-                cout << "PrimaryGeneratorAction - ERROR: energy distribution range is invalid" << endl;
-                exit(1);
+              G4Exception(
+                "PrimaryGeneratorAction::PrimaryGeneratorAction",
+                "REST_G4_INVALID_EN_DIST",
+                FatalException,
+                "Energy distribution range is invalid" 
+              );
             }
             fEnergyDistributionFunction->SetRange(newRangeXMin, newRangeXMax);
             fEnergyDistributionFunction->SetNpx(source->GetEnergyDistributionFormulaNPoints());
@@ -116,8 +120,12 @@ PrimaryGeneratorAction::PrimaryGeneratorAction(SimulationManager* simulationMana
                 newRangeXMax = source->GetAngularDistributionRangeMax();
             }
             if (newRangeXMin == newRangeXMax || newRangeXMin > newRangeXMax) {
-                cout << "PrimaryGeneratorAction - ERROR: angular distribution range is invalid" << endl;
-                exit(1);
+              G4Exception(
+                "PrimaryGeneratorAction::PrimaryGeneratorAction",
+                "REST_G4_INVALID_ANG_DIST",
+                FatalException,
+                "Angular distribution range is invalid" 
+              );
             }
             fAngularDistributionFunction->SetRange(newRangeXMin, newRangeXMax);
             fAngularDistributionFunction->SetNpx(source->GetAngularDistributionFormulaNPoints());
@@ -146,8 +154,12 @@ PrimaryGeneratorAction::PrimaryGeneratorAction(SimulationManager* simulationMana
                 newEnergyRangeXMax = source->GetEnergyDistributionRangeMax();
             }
             if (newEnergyRangeXMin == newEnergyRangeXMax || newEnergyRangeXMin > newEnergyRangeXMax) {
-                cout << "PrimaryGeneratorAction - ERROR: energy distribution range is invalid" << endl;
-                exit(1);
+                G4Exception(
+                  "PrimaryGeneratorAction::PrimaryGeneratorAction",
+                  "REST_G4_INVALID_EN_DIST",
+                  FatalException,
+                  "Energy distribution range is invalid" 
+                );
             }
 
             // angular
@@ -162,8 +174,12 @@ PrimaryGeneratorAction::PrimaryGeneratorAction(SimulationManager* simulationMana
                 newAngularRangeXMax = source->GetAngularDistributionRangeMax();
             }
             if (newAngularRangeXMin == newAngularRangeXMax || newAngularRangeXMin > newAngularRangeXMax) {
-                cout << "PrimaryGeneratorAction - ERROR: angular distribution range is invalid" << endl;
-                exit(1);
+                G4Exception(
+                  "PrimaryGeneratorAction::PrimaryGeneratorAction",
+                  "REST_G4_INVALID_ANG_DIST",
+                  FatalException,
+                  "Angular distribution range is invalid" 
+                );
             }
 
             fEnergyAndAngularDistributionFunction->SetRange(newEnergyRangeXMin, newAngularRangeXMin,
@@ -183,9 +199,12 @@ PrimaryGeneratorAction::PrimaryGeneratorAction(SimulationManager* simulationMana
         }
     } else if (angularDistTypeEnum == AngularDistributionTypes::FORMULA2 ||
                energyDistTypeEnum == EnergyDistributionTypes::FORMULA2) {
-        cout << "Energy/Angular distribution type 'formula2' should be used on both energy and angular"
-             << endl;
-        exit(1);
+        G4Exception(
+          "PrimaryGeneratorAction::PrimaryGeneratorAction",
+          "REST_G4_FORMULA2",
+           FatalException,
+          "Energy/Angular distribution type 'formula2' should be used on both energy and angular" 
+        );
     }
 }
 
@@ -283,6 +302,133 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
     long decaySeed = fPrimaryGeneratorInfo.fSeed;
     if (decaySeed < 0) decaySeed = geant4Seed;
 
+    auto source = restG4Metadata->GetParticleSource(0);
+
+    if (restG4Metadata->GetNumberOfSources() == 1 && (
+        source->GetAngularDistributionType() == "cosmic" || (source->GetEnergyDistributionType() == "cosmic") )) {
+        
+        if (restG4Metadata->GetGeant4PrimaryGeneratorInfo().GetSpatialGeneratorType() != "cosmic") {
+            std::ostringstream errMsg;
+            errMsg << "\n---------------------------------------------------------\n"
+               << "Cosmic generator only supports cosmic type: "
+               << restG4Metadata->GetGeant4PrimaryGeneratorInfo().GetSpatialGeneratorType();
+            G4Exception(
+              "PrimaryGeneratorAction::GeneratePrimaries",
+              "REST_G4_COSMIC_SOURCE",
+              FatalException,
+              errMsg.str().c_str()
+            );
+        }
+
+        const TH2D* hist = source->GetCosmicHistogramsTransformed();
+        if (!hist) {
+            source->InitializeCosmics();
+            hist = source->GetCosmicHistogramsTransformed();
+            
+            if (!hist) {
+              G4Exception(
+                "PrimaryGeneratorAction::GeneratePrimaries",
+                "REST_G4_COSMIC_SOURCE",
+                FatalException,
+                "Cosmic histogram is null for source!"
+              );
+            }
+        }
+        double energy = 0.0;
+        double zenithDeg = 0.0;
+
+        double minEnergy = source->GetEnergyDistributionRangeMin(); 
+        double maxEnergy = source->GetEnergyDistributionRangeMax();
+
+        if (std::abs(minEnergy - maxEnergy) < 1e-12) {
+            const_cast<TH2D*>(hist)->GetRandom2(energy, zenithDeg); 
+        } else {
+            while (true) {
+                const_cast<TH2D*>(hist)->GetRandom2(energy, zenithDeg);
+                if (energy >= minEnergy && energy <= maxEnergy) {
+                    break;
+                }
+            }
+        }
+
+        std::string activeParticleName = source->GetParticleName();
+        fParticleGun.SetParticleDefinition(
+            G4ParticleTable::GetParticleTable()->FindParticle(activeParticleName.c_str()));
+
+        fParticleGun.SetParticleEnergy(energy * 1000.0 * keV);
+
+        double phi = G4UniformRand() * TMath::TwoPi();
+        double zenithRad = zenithDeg * TMath::DegToRad();
+
+        const ROOT::Math::XYZVector direction(
+            TMath::Sin(zenithRad) * TMath::Cos(phi),
+            -TMath::Cos(zenithRad),
+            TMath::Sin(zenithRad) * TMath::Sin(phi)
+        );
+
+        if (fCosmicCircumscribedSphereRadius == 0.) {
+            fCosmicCircumscribedSphereRadius = fSimulationManager->GetRestMetadata()
+                                                   ->GetGeant4PrimaryGeneratorInfo()
+                                                   .GetSpatialGeneratorCosmicRadius();
+        }
+        const G4ThreeVector referenceDirection = {0, -1, 0};
+        
+        const double zenith = TMath::ACos(
+            direction.X() * referenceDirection.x() + 
+            direction.Y() * referenceDirection.y() + 
+            direction.Z() * referenceDirection.z()
+        );
+
+        auto positionOnDisk = PointOnUnitDisk(); 
+        double posDiskX = positionOnDisk.first;
+        double posDiskY = positionOnDisk.second;
+
+        double posEllipseX = posDiskX / TMath::Cos(zenith) + TMath::Tan(zenith);
+        double posEllipseY = posDiskY;
+
+        double phiRot = std::atan2(direction.Z(), direction.X());
+        
+        double posEllipseRotatedX = posEllipseX * TMath::Cos(phiRot) - posEllipseY * TMath::Sin(phiRot);
+        double posEllipseRotatedY = posEllipseX * TMath::Sin(phiRot) + posEllipseY * TMath::Cos(phiRot);
+
+        const ROOT::Math::XYZVector positionOrigin(
+            -1.0 * posEllipseRotatedX,
+            1.0,
+            -1.0 * posEllipseRotatedY
+        );
+        
+        auto [intersectionFlag, intersection] = IntersectionLineSphere(positionOrigin, direction);
+        if (!intersectionFlag) {
+            cerr << "PrimaryGeneratorAction - ERROR: cosmic generator failed to find intersection." << endl;
+            intersection = positionOrigin;
+        }
+
+        G4ThreeVector particlePosition = {
+            intersection.X() * fCosmicCircumscribedSphereRadius,
+            intersection.Y() * fCosmicCircumscribedSphereRadius,
+            intersection.Z() * fCosmicCircumscribedSphereRadius,
+        };
+        
+        auto srcDirArr = source->fAngularDistribution.fDirection; 
+        G4ThreeVector sourceDirection = { srcDirArr[0], srcDirArr[1], srcDirArr[2] };
+        G4ThreeVector particleDirection = { direction.X(), direction.Y(), direction.Z() };
+
+        const double angleBetweenDirections = sourceDirection.angle(referenceDirection);
+        if (angleBetweenDirections > 0) {
+            const G4ThreeVector cross = referenceDirection.cross(sourceDirection);
+            particleDirection.rotate(angleBetweenDirections, cross);
+            particlePosition.rotate(angleBetweenDirections, cross);
+        }
+
+        fParticleGun.SetParticleMomentumDirection(particleDirection);
+        fParticleGun.SetParticlePosition(particlePosition);
+
+        std::chrono::duration<double, std::milli> elapsed = std::chrono::high_resolution_clock::now() - start;
+        outputManager->SetEventTimeWallPrimaryGeneration(elapsed.count() / 1000.);
+        fParticleGun.GeneratePrimaryVertex(event);
+
+        return;
+    }
     const auto& primaryGeneratorInfo = restG4Metadata->GetGeant4PrimaryGeneratorInfo();
     const string& spatialGeneratorTypeName = primaryGeneratorInfo.GetSpatialGeneratorType();
     const auto spatialGeneratorTypeEnum = StringToSpatialGeneratorTypes(spatialGeneratorTypeName);
@@ -304,8 +450,12 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
                                                    .GetSpatialGeneratorCosmicRadius();
         }
         if (restG4Metadata->GetNumberOfSources() != 1) {
-            cout << "PrimaryGeneratorAction - ERROR: cosmic generator only supports one source" << endl;
-            exit(1);
+            G4Exception(
+              "PrimaryGeneratorAction::GeneratePrimaries",
+              "REST_G4_COSMIC_GENERATOR",
+              FatalException,
+              "Cosmic generator only supports one source"
+            );
         }
     }
 
@@ -370,9 +520,16 @@ G4ParticleDefinition* PrimaryGeneratorAction::SetParticleDefinition(Int_t partic
         }
 
         if (!fParticle) {
-            G4cout << "Particle definition : " << particleName << " not found!" << G4endl;
-            G4cout << "Particle source index " << particleSourceIndex << G4endl;
-            exit(1);
+            std::ostringstream errMsg;
+            errMsg << "\n---------------------------------------------------------\n"
+                   << "Particle definition : " << particleName << " not found!"
+                   << "Particle source index " << particleSourceIndex;
+            G4Exception(
+              "PrimaryGeneratorAction::GeneratePrimaries",
+              "REST_G4_PARTICLE_SOURCE",
+              FatalException,
+              errMsg.str().c_str() 
+            );
         }
     }
 
@@ -476,11 +633,16 @@ void PrimaryGeneratorAction::SetParticleDirection(Int_t particleSourceIndex,
         // ROOT::Math::XYZVector v = restG4Event->GetPrimaryEventDirection(particleSourceIndex - 1);
         // v = v.Unit();
         //
-        G4cout << "Back to Back is not implemented now. particleSourceIndex: " << particleSourceIndex
-               << G4endl;
-
+        std::ostringstream errMsg;
+        errMsg << "\n---------------------------------------------------------\n"
+               << "Back to Back is not implemented now. particleSourceIndex: " << particleSourceIndex;
+        G4Exception(
+          "PrimaryGeneratorAction::SetParticleDirection",
+          "REST_G4_BACK_TO_BACK",
+          FatalException,
+          errMsg.str().c_str() 
+        );
         // direction.set(-v.X(), -v.Y(), -v.Z());
-        exit(1);
     } else {
         G4cout << "WARNING: Generator angular distribution was not recognized. Particle direction set to ("
                << direction.x() << ", " << direction.y() << ", " << direction.z() << ")" << G4endl;
@@ -624,9 +786,16 @@ void PrimaryGeneratorAction::SetParticlePosition() {
             double val1 = G4UniformRand();
             double val2 = fGeneratorSpatialDensityFunction->Eval(x, y, z);
             if (val2 > 1) {
-                cout << "error! Generator density function > 1 at position (" << x << ", " << y << ", " << z
-                     << "), check your definition!" << endl;
-                exit(1);
+                std::ostringstream errMsg;
+                errMsg << "\n---------------------------------------------------------\n"
+                       << "Generator density function > 1 at position (" 
+                       << x << ", " << y << ", " << z << "), check your definition!";
+                G4Exception(
+                  "PrimaryGeneratorAction::SetParticlePosition",
+                  "REST_G4_SPATIAL_DENSITY",
+                  FatalException,
+                  errMsg.str().c_str() 
+                );
             }
             if (val1 > val2) {
                 continue;
@@ -714,13 +883,29 @@ void PrimaryGeneratorAction::GenPositionOnBoxVolume(double& x, double& y, double
 }
 
 void PrimaryGeneratorAction::GenPositionOnBoxSurface(double& x, double& y, double& z) {
-    cout << __PRETTY_FUNCTION__ << ": not implemented! -> " << x << "," << y << "," << z << endl;
-    exit(1);
+    std::ostringstream errMsg;
+    errMsg << "\n---------------------------------------------------------\n"
+           << "Function not implemented"
+           << x << "," << y << "," << z;
+    G4Exception(
+      " PrimaryGeneratorAction::GenPositionOnBoxSurface",
+      "REST_G4_BOX_SURFACE",
+      FatalException,
+      errMsg.str().c_str() 
+      );
 }
 
 void PrimaryGeneratorAction::GenPositionOnSphereVolume(double& x, double& y, double& z) {
-    cout << __PRETTY_FUNCTION__ << ": not implemented! -> " << x << "," << y << "," << z << endl;
-    exit(1);
+    std::ostringstream errMsg;
+    errMsg << "\n---------------------------------------------------------\n"
+           << "Function not implemented"
+           << x << "," << y << "," << z;
+    G4Exception(
+      "PrimaryGeneratorAction::GenPositionOnSphereVolume",
+      "REST_G4_SPHERE_VOLUME",
+      FatalException,
+      errMsg.str().c_str() 
+    );
 }
 
 void PrimaryGeneratorAction::GenPositionOnSphereSurface(double& x, double& y, double& z) {
@@ -739,8 +924,16 @@ void PrimaryGeneratorAction::GenPositionOnSphereSurface(double& x, double& y, do
 }
 
 void PrimaryGeneratorAction::GenPositionOnCylinderVolume(double& x, double& y, double& z) {
-    cout << __PRETTY_FUNCTION__ << ": not implemented! -> " << x << "," << y << "," << z << endl;
-    exit(1);
+    std::ostringstream errMsg;
+    errMsg << "\n---------------------------------------------------------\n"
+           << "Function not implemented"
+           << x << "," << y << "," << z;
+    G4Exception(
+      "PrimaryGeneratorAction::GenPositionOnCylinderVolume",
+      "REST_G4_CYLINDER_VOLUME",
+      FatalException,
+      errMsg.str().c_str() 
+      );
 }
 
 void PrimaryGeneratorAction::GenPositionOnCylinderSurface(double& x, double& y, double& z) {
@@ -875,10 +1068,16 @@ void PrimaryGeneratorAction::SetParticleEnergyAndDirection(Int_t particleSourceI
         energy *= MeV;  // energy in these histograms is in MeV. TODO: parse energy from axis label
         angle *= TMath::DegToRad();
     } else {
-        cout << "Energy/Angular distribution type 'formula2' or 'TH2D' should be used on both energy and "
-                "angular"
-             << endl;
-        exit(1);
+        std::ostringstream errMsg;
+        errMsg << "\n---------------------------------------------------------\n"
+               << "Energy/Angular distribution type 'formula2' or 'TH2D' should be used on both energy and "
+                "angular";
+        G4Exception(
+          "PrimaryGeneratorAction::SetParticleEnergyAndDirection",
+          "REST_G4_FORMULA2",
+          FatalException,
+          errMsg.str().c_str() 
+        );
     }
 
     const auto& sourceDirectionData = source->fAngularDistribution.fDirection;
