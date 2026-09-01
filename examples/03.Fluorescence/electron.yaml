@@ -28,7 +28,7 @@ g4Manager:
     activeVolumes:
       - name: "detector"
         chance: 1.0
-        maxStep: 1.0
+        maxStep: 1.0 mm
     sensitiveVolumes:
       - "detector"
 

@@ -303,11 +303,18 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
     if (decaySeed < 0) decaySeed = geant4Seed;
 
     auto source = restG4Metadata->GetParticleSource(0);
+    const auto& primaryGeneratorInfo = restG4Metadata->GetGeant4PrimaryGeneratorInfo();
+    const string& spatialGeneratorTypeName = primaryGeneratorInfo.GetSpatialGeneratorType();
+    const auto spatialGeneratorTypeEnum = StringToSpatialGeneratorTypes(spatialGeneratorTypeName);
+    const string angularDistTypeName = source->GetAngularDistributionType();
+    const auto angularDistTypeEnum = StringToAngularDistributionTypes(angularDistTypeName);
+    const string energyDistTypeName = source->GetEnergyDistributionType();
+    const auto energyDistTypeEnum = StringToEnergyDistributionTypes(energyDistTypeName);
 
     if (restG4Metadata->GetNumberOfSources() == 1 && (
-        source->GetAngularDistributionType() == "cosmic" || (source->GetEnergyDistributionType() == "cosmic") )) {
+        angularDistTypeEnum == AngularDistributionTypes::COSMIC || energyDistTypeEnum == EnergyDistributionTypes::COSMIC )) {
         
-        if (restG4Metadata->GetGeant4PrimaryGeneratorInfo().GetSpatialGeneratorType() != "cosmic") {
+        if (spatialGeneratorTypeEnum != SpatialGeneratorTypes::COSMIC) {
             std::ostringstream errMsg;
             errMsg << "\n---------------------------------------------------------\n"
                << "Cosmic generator only supports cosmic type: "
@@ -429,9 +436,7 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
 
         return;
     }
-    const auto& primaryGeneratorInfo = restG4Metadata->GetGeant4PrimaryGeneratorInfo();
-    const string& spatialGeneratorTypeName = primaryGeneratorInfo.GetSpatialGeneratorType();
-    const auto spatialGeneratorTypeEnum = StringToSpatialGeneratorTypes(spatialGeneratorTypeName);
+    
     const auto spatialGeneratorShapeEnum =
         StringToSpatialGeneratorShapes(primaryGeneratorInfo.GetSpatialGeneratorShape());
 

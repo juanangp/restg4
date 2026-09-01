@@ -548,57 +548,43 @@ void Application::ValidateOutputFile(const string& filename) {
     bool error = false;
 
     auto run = TRestRun(filename);
-    auto file = run.fInputFile.get();
-    if (file == nullptr) {
-        cerr << "Output file not found" << endl;
-        exit(1);
-    }
 
     TRestEvent& restEvent = run.GetInputEvent("TRestGeant4Event");
-    TRestGeant4Event* eventTree = dynamic_cast<TRestGeant4Event*>(&restEvent);
+    TRestGeant4Event* g4Event = dynamic_cast<TRestGeant4Event*>(&restEvent);
 
-    if (eventTree == nullptr) {
+    if (g4Event == nullptr) {
         error = true;
         cerr << "'EventTree' not found in output file" << endl;
+    } else {
+      g4Event->SetRestRun(&run);
+      const auto* metadata = g4Event->GetGeant4Metadata();
+      if (!metadata) {
+        std::cerr << "'TRestGeant4Metadata' not found in file\n";
+        error = true;
+      } else {
+        if (!metadata->fGeant4GeometryInfo.GetGeometry()){
+           std::cerr << "'Geometry' not found in file\n";
+           error = true;
+        }
+      }
     }
+
     const auto analysisTree = run.fAnalysisTree;
     if (analysisTree == nullptr) {
         error = true;
         cerr << "'AnalysisTree' not found in output file" << endl;
     }
-
-    const auto geometry = file->Get<TGeoManager>(geometryName);
-    if (geometry == nullptr) {
+    if (!run.GetMetadataClass("TRestRun")) {
         error = true;
-        cerr << "Geometry not found in output file" << endl;
+        cerr << "'TRestRun' metadata not found in output file" << endl;
+    }
+    if (!run.GetMetadataClass("TRestGeant4PhysicsLists")) {
+        error = true;
+        cerr << "'PhysicsList' metadata not found in output file" << endl;
     }
 
-        if (!run.GetMetadata("run")) {
-        error = true;
-        cerr << "'run' metadata not found in output file" << endl;
-    }
-    if (!run.GetMetadata("geant4Metadata")) {
-        error = true;
-        cerr << "'geant4Metadata' metadata not found in output file" << endl;
-    }
-    if (!run.GetMetadata("physicsLists")) {
-        error = true;
-        cerr << "'physicsLists' metadata not found in output file" << endl;
-    }
-    if (!file->Get<TTree>("TRestGeant4Event")) {
-        error = true;
-        cerr << "'TRestGeant4Event' tree not found in output file" << endl;
-    }
-    if (!file->Get<TTree>("AnalysisTree")) {
-        error = true;
-        cerr << "'AnalysisTree' tree not found in output file" << endl;
-    }
-    if (!file->Get<TGeoManager>("Geometry")) {
-        error = true;
-        cerr << "'Geometry' not found in output file" << endl;
-    }
     if (error) {
-        file->ls();
+        run.fInputFile->ls();
         exit(1);
     }
 }
