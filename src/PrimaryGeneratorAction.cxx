@@ -415,7 +415,7 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
             intersection.Y() * fCosmicCircumscribedSphereRadius,
             intersection.Z() * fCosmicCircumscribedSphereRadius,
         };
-        
+
         auto srcDirArr = source->fAngularDistribution.fDirection; 
         G4ThreeVector sourceDirection = { srcDirArr[0], srcDirArr[1], srcDirArr[2] };
         G4ThreeVector particleDirection = { direction.X(), direction.Y(), direction.Z() };
@@ -684,12 +684,12 @@ void PrimaryGeneratorAction::SetParticleEnergy(Int_t particleSourceIndex,
     } else if (energyDistTypeEnum == EnergyDistributionTypes::FLAT) {
         auto enRange =
             restG4Metadata->GetParticleSource(particleSourceIndex)->GetEnergyDistributionRange();
-        energy = ((enRange.first - enRange.second) * G4UniformRand() + enRange.first) * keV;
+        energy = ((enRange.second - enRange.first) * G4UniformRand() + enRange.first) * keV;
     } else if (energyDistTypeEnum == EnergyDistributionTypes::LOG) {
         auto enRange =
             restG4Metadata->GetParticleSource(particleSourceIndex)->GetEnergyDistributionRange();
-        auto max_energy = enRange.first * keV;
-        auto min_energy = enRange.second * keV;
+        auto max_energy = enRange.second * keV;
+        auto min_energy = enRange.first * keV;
         energy = exp((log(max_energy) - log(min_energy)) * G4UniformRand() + log(min_energy));
 
     } else if (energyDistTypeEnum == EnergyDistributionTypes::TH1D) {

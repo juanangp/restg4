@@ -7,6 +7,8 @@
 #include <TObjString.h>
 #include <TPRegexp.h>
 #include <TROOT.h>
+#include <TRandom.h>
+
 #include <TRestGeant4Manager.h>
 #include <TRestGeant4Metadata.h>
 #include <TRestGeant4PhysicsLists.h>
@@ -352,6 +354,7 @@ void Application::Run(const CommandLineOptions::Options& options) {
         metadata->SetGdmlFilename(options.geometryFile);
     }
 
+    gRandom->SetSeed(metadata->GetSeed());
     std::string gdmlPath = TRestTools::GetFullPath(metadata->GetGdmlFilename());
 
     // Check if the file exists locally; if not, look for it using the geometry paths registry

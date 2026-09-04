@@ -45,7 +45,6 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
 
     const auto startingPath = filesystem::current_path();
 
-    // REPARACIÓN DE MEMORIA: Guardamos los strings en variables reales y estables para que no se destruyan
     std::string fullGdmlFilename = std::string(restG4Metadata->GetGdmlFilename());
     auto pathPair = TRestTools::SeparatePathAndName(fullGdmlFilename);
     std::string gdmlPath = pathPair.first;
@@ -58,7 +57,6 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
     fGdmlParser->Read(gdmlToRead, false);
     G4VPhysicalVolume* worldVolume = fGdmlParser->GetWorldVolume();
 
-    // ESCUDO DE SEGURIDAD: Si Geant4 no pudo leer el archivo, nos detenemos aquí de forma limpia antes del crash
     if (worldVolume == nullptr) {
         cerr << "ERROR: Geant4 could not read the world volume from: " << gdmlToRead << endl;
         filesystem::current_path(startingPath);
@@ -262,6 +260,19 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
         }
     }
 
+    // Resolve Geant4-mangled physical volume names (e.g. assembly imprints such as
+    // "av_1_impr_1_gasVolume_pv_0") as aliases of the user-declared active/sensitive
+    // volume names, so runtime lookups by physical name succeed directly.
+    {
+        G4PhysicalVolumeStore* physicalVolumeStore = G4PhysicalVolumeStore::GetInstance();
+        for (auto* physicalVolume : *physicalVolumeStore) {
+            if (!physicalVolume || !physicalVolume->GetLogicalVolume()) continue;
+            const std::string logicalName = physicalVolume->GetLogicalVolume()->GetName();
+            const std::string physicalName = physicalVolume->GetName();
+            restG4Metadata->RegisterVolumeAlias(logicalName, physicalName);
+        }
+    }
+
     return worldVolume;
 }
 
@@ -269,19 +280,18 @@ G4VPhysicalVolume* DetectorConstruction::GetPhysicalVolume(const G4String& physi
     G4PhysicalVolumeStore* physicalVolumeStore = G4PhysicalVolumeStore::GetInstance();
     TRestGeant4Metadata* restG4Metadata = fSimulationManager->GetRestMetadata();
     const auto& geometryInfo = restG4Metadata->GetGeant4GeometryInfo();
-    vector<G4VPhysicalVolume*>::const_iterator physicalVolume;
-    for (physicalVolume = physicalVolumeStore->begin(); physicalVolume != physicalVolumeStore->end();
-         physicalVolume++) {
-        auto name = (*physicalVolume)->GetName();
-        if (name == physicalVolumeName) {
-            return *physicalVolume;
+
+    std::string geant4PhysicalName = geometryInfo.GetGeant4PhysicalNameFromAlternativeName(physicalVolumeName);
+
+    for (auto* physicalVolume : *physicalVolumeStore) {
+        if (physicalVolume && physicalVolume->GetName() == geant4PhysicalName) {
+            return physicalVolume;
         }
-        // physical volumes with the same Geant4 name are the same G4VPhysicalVolume pointer
-        auto alternativeNames = geometryInfo.GetAlternativeNamesFromGeant4PhysicalName(name);
-        for (const auto& alternativeName : alternativeNames) {
-            if ((G4String)alternativeName == physicalVolumeName) {
-                return *physicalVolume;
-            }
+    }
+
+    for (auto* physicalVolume : *physicalVolumeStore) {
+        if (physicalVolume && physicalVolume->GetName() == physicalVolumeName) {
+            return physicalVolume;
         }
     }
 
@@ -374,6 +384,8 @@ bool DetectorConstruction::IsPointInsideAnyDaughterVolume(const G4LogicalVolume*
 void TRestGeant4GeometryInfo::PopulateFromGeant4World(const G4VPhysicalVolume* world) {
     fVolumeNameMap.clear();
     fVolumeNameReverseMap.clear();
+    fG4ToAltNames.clear();
+    fAltToG4Name.clear();
 
     if (!world) return;
 
@@ -389,7 +401,6 @@ void TRestGeant4GeometryInfo::PopulateFromGeant4World(const G4VPhysicalVolume* w
         [&](const G4VPhysicalVolume* volume) {
             if (!volume) return;
 
-            // Keep daughters-first ordering to preserve historical volume ID numbering.
             G4LogicalVolume* logVol = volume->GetLogicalVolume();
             if (logVol) {
                 for (size_t i = 0; i < logVol->GetNoDaughters(); ++i) {
@@ -397,10 +408,16 @@ void TRestGeant4GeometryInfo::PopulateFromGeant4World(const G4VPhysicalVolume* w
                 }
             }
 
-            InsertVolumeName(static_cast<int>(index), volume->GetName());
+            std::string physName = volume->GetName();
+            if (logVol) {
+                std::string logName = logVol->GetName();
+                fG4ToAltNames[physName].insert(logName);
+                fAltToG4Name[logName] = physName;
+            }
+
+            InsertVolumeName(static_cast<int>(index), physName);
             ++index;
         };
 
     processVolumeRecursively(world);
 }
-
