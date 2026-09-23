@@ -28,7 +28,7 @@ void EventAction::BeginOfEventAction(const G4Event* event) {
     if (restG4Metadata->GetVerboseLevel() >= TRestLogManager::REST_Verbose_Level::REST_Debug) {
         G4cout << "DEBUG: Start of event ID " << eventID << " (" << eventID + 1 << " of "
                << G4RunManager::GetRunManager()->GetNumberOfEventsToBeProcessed() << "). "
-               << restRun->GetEntries() << " Events stored" << endl;
+               << restRun->GetSavedEntries() << " Events stored" << endl;
     }
 #ifdef GEANT4_WITHOUT_G4RunManagerFactory  // For old Geant4 where the thread print gives segfault
     else {

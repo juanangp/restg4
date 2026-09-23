@@ -516,7 +516,7 @@ void Application::Run(const CommandLineOptions::Options& options) {
     run->SetEndTimeStamp((Double_t)systime);
     const string filename = TRestTools::GetFullPath(run->GetOutputFileName());
 
-    const auto nEntries = run->GetEntries();
+    const auto nEntries = run->GetSavedEntries();
 
     metadata->SetSimulationWallTime(fSimulationManager.GetElapsedTime());
 
@@ -552,22 +552,28 @@ void Application::ValidateOutputFile(const string& filename) {
 
     auto run = TRestRun(filename);
 
-    TRestEvent& restEvent = run.GetInputEvent("TRestGeant4Event");
-    TRestGeant4Event* g4Event = dynamic_cast<TRestGeant4Event*>(&restEvent);
+    TRestEvent* restEvent = run.GetInputEvent();
 
-    if (g4Event == nullptr) {
-        error = true;
-        cerr << "'EventTree' not found in output file" << endl;
+    if (restEvent == nullptr) {
+      error = true;
+      cerr << "Error: No input event could be retrieved from the file." << endl;
     } else {
-      g4Event->SetRestRun(&run);
-      const auto* metadata = g4Event->GetGeant4Metadata();
-      if (!metadata) {
-        std::cerr << "'TRestGeant4Metadata' not found in file\n";
+      TRestGeant4Event* g4Event = dynamic_cast<TRestGeant4Event*>(restEvent);
+
+      if (g4Event == nullptr) {
         error = true;
+        cerr << "Error: The event was found, but it is NOT a TRestGeant4Event." << endl;
       } else {
-        if (!metadata->fGeant4GeometryInfo.GetGeometry()){
-           std::cerr << "'Geometry' not found in file\n";
-           error = true;
+        g4Event->SetRestRun(&run);
+        const auto* metadata = g4Event->GetGeant4Metadata();
+        if (!metadata) {
+            std::cerr << "'TRestGeant4Metadata' not found in file\n";
+            error = true;
+        } else {
+            if (!metadata->fGeant4GeometryInfo.GetGeometry()){
+                std::cerr << "'Geometry' not found in file\n";
+                error = true;
+            }
         }
       }
     }

@@ -1,4 +1,3 @@
-
 #include <algorithm>
 #include <G4Event.hh>
 #include <G4HadronicProcess.hh>
@@ -16,21 +15,38 @@ using namespace std;
 TRestGeant4Event::TRestGeant4Event(const G4Event* event) : TRestGeant4Event() {
     SetID(event->GetEventID());
     SetOK(true);
-    time_t system_time = time(nullptr);
 
+    time_t system_time = time(nullptr);
     SetTime((Double_t)system_time);
 
     auto primaryVertex = event->GetPrimaryVertex();
-    const auto& position = primaryVertex->GetPosition();
-    fEventData.primaryPosition = {position.x() / CLHEP::mm, position.y() / CLHEP::mm, position.z() / CLHEP::mm};
-    for (int i = 0; i < primaryVertex->GetNumberOfParticle(); i++) {
-        const auto& primaryParticle = primaryVertex->GetPrimary(i);
-        fEventData.primaryParticleNames.emplace_back(primaryParticle->GetParticleDefinition()->GetParticleName());
-        fEventData.primaryEnergies.emplace_back(primaryParticle->GetKineticEnergy() / CLHEP::keV);
-        const auto& momentum = primaryParticle->GetMomentumDirection();
-        fEventData.primaryDirections.emplace_back(momentum.x(), momentum.y(), momentum.z());
-    }
+    if (!primaryVertex) return;
 
+    const auto& position = primaryVertex->GetPosition();
+
+    fEventData.primaryPosition = {
+        position.x() / CLHEP::mm,
+        position.y() / CLHEP::mm,
+        position.z() / CLHEP::mm
+    };
+
+    for (int i = 0; i < primaryVertex->GetNumberOfParticle(); ++i) {
+        const auto* primaryParticle = primaryVertex->GetPrimary(i);
+        if (!primaryParticle || !primaryParticle->GetParticleDefinition()) continue;
+
+        fEventData.primaryParticleNames.emplace_back(
+            primaryParticle->GetParticleDefinition()->GetParticleName());
+
+        fEventData.primaryEnergies.emplace_back(
+            primaryParticle->GetKineticEnergy() / CLHEP::keV);
+
+        const auto& momentum = primaryParticle->GetMomentumDirection();
+
+        fEventData.primaryDirections.emplace_back(
+            momentum.x(),
+            momentum.y(),
+            momentum.z());
+    }
 }
 
 void TRestGeant4Event::UpdatePrimaryData(const G4Event* event) {
@@ -44,337 +60,565 @@ void TRestGeant4Event::UpdatePrimaryData(const G4Event* event) {
     fEventData.primaryDirections.clear();
 
     const auto& position = primaryVertex->GetPosition();
-    fEventData.primaryPosition = {position.x() / CLHEP::mm, position.y() / CLHEP::mm,
-                                  position.z() / CLHEP::mm};
+
+    fEventData.primaryPosition = {
+        position.x() / CLHEP::mm,
+        position.y() / CLHEP::mm,
+        position.z() / CLHEP::mm
+    };
 
     for (int i = 0; i < primaryVertex->GetNumberOfParticle(); ++i) {
         const auto* primaryParticle = primaryVertex->GetPrimary(i);
-        if (!primaryParticle || !primaryParticle->GetParticleDefinition()) continue;
+
+        if (!primaryParticle || !primaryParticle->GetParticleDefinition())
+            continue;
 
         fEventData.primaryParticleNames.emplace_back(
             primaryParticle->GetParticleDefinition()->GetParticleName());
-        fEventData.primaryEnergies.emplace_back(primaryParticle->GetKineticEnergy() / CLHEP::keV);
+
+        fEventData.primaryEnergies.emplace_back(
+            primaryParticle->GetKineticEnergy() / CLHEP::keV);
+
         const auto& direction = primaryParticle->GetMomentumDirection();
-        fEventData.primaryDirections.emplace_back(direction.x(), direction.y(), direction.z());
+
+        fEventData.primaryDirections.emplace_back(
+            direction.x(),
+            direction.y(),
+            direction.z());
     }
 }
 
 bool TRestGeant4Event::InsertTrack(const G4Track* track) {
     if (!track) return false;
 
-    const bool hasInitialStep = fInitialStep.GetNumberOfHits() == 1;
-
-   if (!hasInitialStep) {
+    if (!fHasPendingInitialStep) {
         G4Exception(
-            "TRestGeant4Event::InsertStep",
+            "TRestGeant4Event::InsertTrack",
             "REST_G4_MISSING_INITIAL_STEP",
             FatalException,
-            "Track has no initial step! SteppingVerbose pipeline is broken for this thread."
-        );
+            "Track has no initial step! SteppingVerbose pipeline is broken for this thread.");
     }
 
-    if ((fTracks.empty() && IsSubEvent()) ||
-        (fTracks.empty() && !IsSubEvent() && GetGeant4Metadata()->GetNumberOfSources() == 1)) {
-        fEventData.subEventParticleName = track->GetParticleDefinition()->GetParticleName();
-        fEventData.subEventEnergy = track->GetKineticEnergy() / CLHEP::keV;
+    const bool isTracksEmpty = fEventData.trackIDs.empty();
+
+    if ((isTracksEmpty && IsSubEvent()) ||
+        (isTracksEmpty &&
+         !IsSubEvent() &&
+         GetGeant4Metadata()->GetNumberOfSources() == 1)) {
+
+        fEventData.subEventParticleName =
+            track->GetParticleDefinition()->GetParticleName();
+
+        fEventData.subEventEnergy =
+            track->GetKineticEnergy() / CLHEP::keV;
+
         const auto& position = track->GetPosition();
-        fEventData.subEventPosition = {position.x() / CLHEP::mm, position.y() / CLHEP::mm,
-                                       position.z() / CLHEP::mm};
+
+        fEventData.subEventPosition = {
+            position.x() / CLHEP::mm,
+            position.y() / CLHEP::mm,
+            position.z() / CLHEP::mm
+        };
+
         const auto& momentum = track->GetMomentumDirection();
-        fEventData.subEventDirection = {momentum.x(), momentum.y(), momentum.z()};
+
+        fEventData.subEventDirection = {
+            momentum.x(),
+            momentum.y(),
+            momentum.z()
+        };
     }
 
-    if (fTracks.empty() && GetSubID() == 0) globalTimeOffset = 0;
+    const std::size_t currentTrackIndex = fEventData.trackIDs.size();
 
-    fTrackIDToTrackIndex[track->GetTrackID()] = int(fTracks.size());
+    if (currentTrackIndex == 0 && GetSubID() == 0)
+        globalTimeOffset = 0;
 
-    // 1. Instantiating the clean track on the heap matrix
-    TRestGeant4Track* newTrack = new TRestGeant4Track(track);
+    fTrackIDToTrackIndex[track->GetTrackID()] =
+        static_cast<int>(currentTrackIndex);
 
-    // preventing TClassEdit::GetSplit from tracking unaligned memory chunk operations.
-    newTrack->RemoveHits(); 
+    const std::size_t startHitIdx = fPendingInitialStepIndex;
 
-    // Associate the initial stepping birth parameters when available.
-    if (hasInitialStep) {
-        newTrack->SetHits(fInitialStep);
+    fEventData.trackIDs.push_back(track->GetTrackID());
+    fEventData.parentIDs.push_back(track->GetParentID());
+
+    fEventData.trackParticleNames.push_back(
+        track->GetParticleDefinition()->GetParticleName());
+
+    if (track->GetCreatorProcess() != nullptr) {
+        fEventData.trackCreatorProcesses.push_back(
+            track->GetCreatorProcess()->GetProcessName());
+    } else {
+        fEventData.trackCreatorProcesses.push_back("PrimaryGenerator");
     }
-    newTrack->SetEvent(this);
 
-    fTracks.push_back(newTrack);
+    fEventData.trackDepositedEnergy.push_back(0.0);
 
-    auto parentTrackIt = fTrackIDToTrackIndex.find(track->GetParentID());
+    fEventData.trackInitialEnergies.push_back(
+        track->GetKineticEnergy() / CLHEP::keV);
+
+    fEventData.trackStartIndices.push_back(startHitIdx);
+    fEventData.trackNHits.push_back(1);
+
+    fEventData.trackGlobalTimestamps.push_back(
+        track->GetGlobalTime() / CLHEP::microsecond);
+
+    fEventData.trackTimeOffsets.push_back(globalTimeOffset);
+    fEventData.trackTimeLengths.push_back(0.0);
+    fEventData.trackLengths.push_back(0.0);
+    fEventData.trackWeights.push_back(track->GetWeight());
+
+    const G4ThreeVector& trackOrigin = track->GetPosition();
+
+    fEventData.trackInitialPositions.push_back({
+        trackOrigin.x(),
+        trackOrigin.y(),
+        trackOrigin.z()
+    });
+
+    fEventData.trackSecondariesIndices.push_back(
+        fEventData.trackSecondariesIDs.size());
+
+    fEventData.trackSecondariesOffsets.push_back(0);
+
+    const auto parentTrackIt =
+        fTrackIDToTrackIndex.find(track->GetParentID());
+
     if (parentTrackIt != fTrackIDToTrackIndex.end()) {
-        fTracks[parentTrackIt->second]->AddSecondaryTrackID(track->GetTrackID());
+        fEventData.trackSecondariesIDs.push_back(track->GetTrackID());
+
+        fEventData.trackSecondariesOffsets[parentTrackIt->second]++;
     }
+
+    fHasPendingInitialStep = false;
+    fPendingInitialStepIndex = 0;
 
     return true;
 }
 
-void TRestGeant4Event::UpdateTrack(const G4Track* track) { fTracks.back()->UpdateTrack(track); }
+void TRestGeant4Event::UpdateTrack(const G4Track* track) {
+    if (!track || fEventData.trackIDs.empty()) return;
 
-void TRestGeant4Event::InsertStep(const G4Step* step) {
-    if (!step) return;
+    const std::size_t index = fEventData.trackIDs.size() - 1;
 
-    if (step->GetTrack()->GetCurrentStepNumber() == 0) {
-        fInitialStep = TRestGeant4Hits();
-        fInitialStep.SetEvent(this);
-        fInitialStep.InsertStep(step);
-    } else {
-        fTracks.back()->InsertStep(step);
-    }
-}
-
-bool OutputManager::IsValidTrack(const G4Track*) const { return true; }
-
-bool OutputManager::IsValidStep(const G4Step*) const { return true; }
-
-TRestGeant4Track::TRestGeant4Track(const G4Track* track) {
-    
-    fTrackID = track->GetTrackID();
-    fParentID = track->GetParentID();
-
-    auto particle = track->GetParticleDefinition();
-    
-    fParticleName = TString(particle->GetParticleName());
-
-    if (track->GetCreatorProcess() != nullptr) {
-        fCreatorProcess = TString(track->GetCreatorProcess()->GetProcessName());
-    } else {
-        fCreatorProcess = TString("PrimaryGenerator");
-    }
-
-    fInitialKineticEnergy = track->GetKineticEnergy() / CLHEP::keV;
-    fWeight = track->GetWeight();
-    fGlobalTimestamp = track->GetGlobalTime() / CLHEP::microsecond;
-
-    const G4ThreeVector& trackOrigin = track->GetPosition();
-    fInitialPosition = {trackOrigin.x(), trackOrigin.y(), trackOrigin.z()};
-
-    //fSecondaryTrackIDs.reserve(32); 
-}
-
-void TRestGeant4Track::InsertStep(const G4Step* step) { fHits.InsertStep(step); }
-
-void TRestGeant4Track::UpdateTrack(const G4Track* track) {
-    if (track->GetTrackID() != fTrackID) {
+    if (track->GetTrackID() != fEventData.trackIDs.at(index)) {
         G4Exception(
-            "TRestGeant4Track::UpdateTrack",
+            "TRestGeant4Event::UpdateTrack",
             "REST_G4_TRACK_ID_MISMATCH",
             FatalException,
-            "Mistmatch of trackID while updating track"
-        );
+            "Mistmatch of trackID while updating track");
     }
 
-    fLength = track->GetTrackLength() / CLHEP::mm;
-    fTimeLength = track->GetLocalTime() / CLHEP::microsecond;
+    fEventData.trackLengths[index] =
+        track->GetTrackLength() / CLHEP::mm;
 
-    const auto metadata = GetGeant4Metadata();
+    fEventData.trackTimeLengths[index] =
+        track->GetLocalTime() / CLHEP::microsecond;
 
-    if (!metadata->isGlobalTimeReset()) return;
+    const auto* metadata = GetGeant4Metadata();
 
-    SetTimeOffset(globalTimeOffset);
+    if (!metadata || !metadata->isGlobalTimeReset())
+        return;
 
-    const double precision = metadata->GetResetTimePrecision() / CLHEP::microsecond;
-    const double globalTime = track->GetGlobalTime() / CLHEP::microsecond;
+    fEventData.trackTimeOffsets[index] = globalTimeOffset;
 
-    const auto processName = track->GetStep()->GetPostStepPoint()->GetProcessDefinedStep()->GetProcessName();
-    // ResetGloblal time in case of long Radioactive decay
-    if (processName == "RadioactiveDecay")
-        if (globalTime + precision == globalTime) {
-            auto secondaries = track->GetStep()->GetSecondary();
-            size_t nSeco = secondaries->size();
-            globalTimeOffset += globalTime;
-            if (nSeco > 0)
-                for (size_t i = 0; i < nSeco; i++) {
-                    G4Track* tck = (G4Track*)(*secondaries)[i];
-                    tck->SetGlobalTime(0.);  // Reset global time for secondaries
-                }
-        }
-}
+    const double precision =
+        metadata->GetResetTimePrecision() / CLHEP::microsecond;
 
-Int_t TRestGeant4PhysicsInfo::GetProcessIDFromGeant4Process(const G4VProcess* process) {
-    return process->GetProcessType() * 1000 + process->GetProcessSubType();
-}
+    const double globalTime =
+        track->GetGlobalTime() / CLHEP::microsecond;
 
-void TRestGeant4Hits::InsertStep(const G4Step* step) {
-    const G4Track* track = step->GetTrack();
+    const auto* step = track->GetStep();
 
-    TRestGeant4Metadata* metadata = GetGeant4Metadata();
+    if (!step || !step->GetPostStepPoint())
+        return;
 
-    const auto& geometryInfo = metadata->GetGeant4GeometryInfo();
+    const auto* process =
+        step->GetPostStepPoint()->GetProcessDefinedStep();
 
-    // Get the full name (path) of the physical volume which uniquely identifies it
-    auto th = step->GetPreStepPoint()->GetTouchable();
-    G4int depth = th->GetHistoryDepth();
-    G4String geant4path = "";
-    if (depth == 0) {  // it is the world volume
-        geant4path = th->GetVolume()->GetName();
-    }
-    for (G4int i = 1; i <= depth; ++i) {  // start from 1 to skip world volume
-        // Move the touchable to level i (0 = current volume, depth = world)
-        G4VPhysicalVolume* pv = th->GetVolume(depth - i);
-        if (pv) {
-            if (geant4path != "") {
-                geant4path += geometryInfo.GetPathSeparator().c_str();
+    if (!process)
+        return;
+
+    if (process->GetProcessName() == "RadioactiveDecay" &&
+        globalTime + precision == globalTime) {
+
+        const auto* secondaries = step->GetSecondary();
+
+        globalTimeOffset += globalTime;
+
+        if (secondaries != nullptr) {
+            for (auto* secondary : *secondaries) {
+                if (secondary)
+                    secondary->SetGlobalTime(0.);
             }
-            geant4path += pv->GetName();
         }
     }
-    // convert to the names used in gdml (due to assemblies)
-    const auto volumeName = geometryInfo.GetAlternativePathFromGeant4Path(geant4path);
+}
 
-    if (!metadata->IsActiveVolume(volumeName) && step->GetTrack()->GetCurrentStepNumber() != 0) {
-        // we always store the first step
+void TRestGeant4Event::InsertStep(const G4Step* step) {
+    if (!step || !step->GetTrack()) return;
+
+    const G4Track* track = step->GetTrack();
+    const bool isInitialStep = track->GetCurrentStepNumber() == 0;
+
+    const TRestGeant4Metadata* metadata = GetGeant4Metadata();
+
+    if (!metadata) {
+        G4Exception(
+            "TRestGeant4Event::InsertStep",
+            "REST_G4_MISSING_METADATA",
+            FatalException,
+            "Missing Geant4 metadata while inserting a step.");
         return;
     }
 
+    const auto& geometryInfo = metadata->GetGeant4GeometryInfo();
+
+    auto touchable = step->GetPreStepPoint()->GetTouchable();
+
+    if (!touchable) return;
+
+    const G4int depth = touchable->GetHistoryDepth();
+
+    G4String geant4path = "";
+
+    if (depth == 0) {
+        auto* volume = touchable->GetVolume();
+
+        if (volume)
+            geant4path = volume->GetName();
+    }
+
+    for (G4int i = 1; i <= depth; ++i) {
+        G4VPhysicalVolume* pv =
+            touchable->GetVolume(depth - i);
+
+        if (pv) {
+            if (geant4path != "")
+                geant4path += geometryInfo.GetPathSeparator().c_str();
+
+            geant4path += pv->GetName();
+        }
+    }
+
+    const auto volumeName =
+        geometryInfo.GetAlternativePathFromGeant4Path(geant4path);
+
+    if (!metadata->IsActiveVolume(volumeName) && !isInitialStep)
+        return;
+
     const bool kill = metadata->IsKillVolume(volumeName);
 
-    const auto& particle = step->GetTrack()->GetDefinition();
-    const auto& particleID = particle->GetPDGEncoding();
-    const auto& particleName = particle->GetParticleName();
+    const auto* particle = track->GetDefinition();
 
-    auto energy = step->GetTotalEnergyDeposit() / CLHEP::keV;
+    if (!particle) return;
 
-    metadata->fGeant4PhysicsInfo.InsertParticleName(particleID, particleName);
+    const auto particleID = particle->GetPDGEncoding();
+    const auto particleName = particle->GetParticleName();
 
-    const auto process = step->GetPostStepPoint()->GetProcessDefinedStep();
+    auto energy =
+        step->GetTotalEnergyDeposit() / CLHEP::keV;
+
+    metadata->fGeant4PhysicsInfo.InsertParticleName(
+        particleID,
+        particleName);
+
+    const auto* process =
+        step->GetPostStepPoint()->GetProcessDefinedStep();
+
     G4String processName = "Init";
     G4String processTypeName = "Init";
     Int_t processID = 0;
-    if (track->GetCurrentStepNumber() != 0) {
-        // 0 = Init step (G4SteppingVerbose) process is not defined for this step
+
+    if (!isInitialStep && process != nullptr) {
         processName = process->GetProcessName();
-        processTypeName = G4VProcess::GetProcessTypeName(process->GetProcessType());
-        processID = TRestGeant4PhysicsInfo::GetProcessIDFromGeant4Process(process);
+
+        processTypeName =
+            G4VProcess::GetProcessTypeName(
+                process->GetProcessType());
+
+        processID =
+            TRestGeant4PhysicsInfo::GetProcessIDFromGeant4Process(
+                process);
     }
 
     if (kill) {
         processName = "REST-for-physics-kill";
         processTypeName = "REST-for-physics";
-        processID = 1000000;  // use id out of range!
+        processID = 1000000;
         energy = 0;
 
-        step->GetTrack()->SetTrackStatus(fStopAndKill);
+        const_cast<G4Track*>(track)->SetTrackStatus(fStopAndKill);
     }
 
-    metadata->fGeant4PhysicsInfo.InsertProcessName(processID, processName, processTypeName);
+    metadata->fGeant4PhysicsInfo.InsertProcessName(
+        processID,
+        processName,
+        processTypeName);
 
-    auto sensitiveVolumeName =
-        geometryInfo.GetAlternativeNameFromGeant4PhysicalName(metadata->GetSensitiveVolume());
+    const G4ThreeVector& position = track->GetPosition();
 
-    G4Track* aTrack = step->GetTrack();
+    const Double_t x = position.x() / CLHEP::mm;
+    const Double_t y = position.y() / CLHEP::mm;
+    const Double_t z = position.z() / CLHEP::mm;
 
-    Double_t x = aTrack->GetPosition().x() / CLHEP::mm;
-    Double_t y = aTrack->GetPosition().y() / CLHEP::mm;
-    Double_t z = aTrack->GetPosition().z() / CLHEP::mm;
+    const Double_t hitGlobalTime =
+        track->GetGlobalTime() / CLHEP::microsecond;
 
-    const ROOT::Math::XYZVector hitPosition(x, y, z);
-    const Double_t hitGlobalTime = track->GetGlobalTime() / CLHEP::microsecond;
-    const G4ThreeVector& momentum = track->GetMomentumDirection();
+    const G4ThreeVector& momentum =
+        track->GetMomentumDirection();
 
-    AddHit(hitPosition, energy, hitGlobalTime, TRestHitsData::REST_HitType::XYZ);
+    const Int_t volumeID =
+        geometryInfo.GetIDFromVolume(volumeName);
 
-    if (fIsView) {
-        if (fMappedProcessID) fMappedProcessID->emplace_back(processID);
-        if (fMappedVolumeID) fMappedVolumeID->emplace_back(geometryInfo.GetIDFromVolume(volumeName));
-        if (fMappedKineticEnergy) fMappedKineticEnergy->emplace_back(track->GetKineticEnergy() / CLHEP::keV);
-        if (fMappedMomentumDirection) fMappedMomentumDirection->emplace_back(momentum.x(), momentum.y(), momentum.z());
-    } else {
-        fProcessID.emplace_back(processID);
-        fVolumeID.emplace_back(geometryInfo.GetIDFromVolume(volumeName));
-        fKineticEnergy.emplace_back(track->GetKineticEnergy() / CLHEP::keV);
-        fMomentumDirection.emplace_back(momentum.x(), momentum.y(), momentum.z());
-    }
+    fEventData.hitsStorage.x.push_back(x);
+    fEventData.hitsStorage.y.push_back(y);
+    fEventData.hitsStorage.z.push_back(z);
+    fEventData.hitsStorage.time.push_back(hitGlobalTime);
+    fEventData.hitsStorage.energy.push_back(energy);
+    fEventData.hitsStorage.type.push_back(
+        TRestHitsData::REST_HitType::XYZ);
 
-    string isotopeName;
-    int atomicNumber = 0;
-    int atomicMassNumber = 0;
+    fEventData.hitProcessID.push_back(processID);
+    fEventData.hitVolumeID.push_back(volumeID);
 
-    if (metadata->GetStoreHadronicTargetInfo() && track->GetCurrentStepNumber() != 0 &&
-        process->GetProcessType() == G4ProcessType::fHadronic) {
-        auto hadronicProcess = dynamic_cast<const G4HadronicProcess*>(process);
-        auto* targetNucleus = hadronicProcess ? const_cast<G4Nucleus*>(hadronicProcess->GetTargetNucleus()) : nullptr;
-        if (targetNucleus != nullptr) {
-            auto isotope = targetNucleus->GetIsotope();
-            if (isotope) {
-                isotopeName = isotope->GetName();
-                atomicNumber = isotope->GetZ();
-                atomicMassNumber = isotope->GetN();
-            }
-        }
-    }
+    fEventData.hitKineticEnergy.push_back(
+        track->GetKineticEnergy() / CLHEP::keV);
+
+    fEventData.hitMomentumDirection.push_back({
+        momentum.x(),
+        momentum.y(),
+        momentum.z()
+    });
 
     if (metadata->GetStoreHadronicTargetInfo()) {
-        if (fIsView) {
-            if (fMappedHadronicTargetIsotopeName) fMappedHadronicTargetIsotopeName->emplace_back(isotopeName);
-            if (fMappedHadronicTargetIsotopeZ) fMappedHadronicTargetIsotopeZ->emplace_back(atomicNumber);
-            if (fMappedHadronicTargetIsotopeA) fMappedHadronicTargetIsotopeA->emplace_back(atomicMassNumber);
-        } else {
-            fHadronicTargetIsotopeName.emplace_back(isotopeName);
-            fHadronicTargetIsotopeZ.emplace_back(atomicNumber);
-            fHadronicTargetIsotopeA.emplace_back(atomicMassNumber);
+        string isotopeName = "";
+        int atomicNumber = 0;
+        int atomicMassNumber = 0;
+
+        if (!isInitialStep &&
+            process != nullptr &&
+            process->GetProcessType() == G4ProcessType::fHadronic) {
+
+            auto* hadronicProcess =
+                dynamic_cast<const G4HadronicProcess*>(process);
+
+            auto* targetNucleus =
+                hadronicProcess
+                    ? const_cast<G4Nucleus*>(
+                          hadronicProcess->GetTargetNucleus())
+                    : nullptr;
+
+            if (targetNucleus != nullptr) {
+                auto isotope = targetNucleus->GetIsotope();
+
+                if (isotope) {
+                    isotopeName = isotope->GetName();
+                    atomicNumber = isotope->GetZ();
+                    atomicMassNumber = isotope->GetN();
+                }
+            }
+        }
+
+        fEventData.hitHadronicTargetIsotopeName.push_back(
+            isotopeName);
+
+        fEventData.hitHadronicTargetIsotopeZ.push_back(
+            atomicNumber);
+
+        fEventData.hitHadronicTargetIsotopeA.push_back(
+            atomicMassNumber);
+    }
+
+    if (isInitialStep) {
+        fHasPendingInitialStep = true;
+        fPendingInitialStepIndex =
+            fEventData.hitsStorage.x.size() - 1;
+    } else {
+        if (!fEventData.trackNHits.empty()) {
+            const std::size_t activeTrackIndex =
+                fEventData.trackNHits.size() - 1;
+
+            fEventData.trackNHits[activeTrackIndex]++;
+
+            fEventData.trackDepositedEnergy[activeTrackIndex] +=
+                energy;
         }
     }
 
-    SimulationManager::GetOutputManager()->AddEnergyToVolumeForParticleForProcess(energy, volumeName.c_str(),
-                                                                                  particleName.c_str(), processName.c_str());
+    SimulationManager::GetOutputManager()
+        ->AddEnergyToVolumeForParticleForProcess(
+            energy,
+            volumeName.c_str(),
+            particleName.c_str(),
+            processName.c_str());
+}
+
+bool OutputManager::IsValidTrack(const G4Track*) const {
+    return true;
+}
+
+bool OutputManager::IsValidStep(const G4Step*) const {
+    return true;
+}
+
+Int_t TRestGeant4PhysicsInfo::GetProcessIDFromGeant4Process(
+    const G4VProcess* process) {
+
+    if (!process)
+        return 0;
+
+    return process->GetProcessType() * 1000 +
+           process->GetProcessSubType();
 }
 
 void OutputManager::RemoveUnwantedTracks() {
     const auto& metadata = fSimulationManager->GetRestMetadata();
-    set<int> trackIDsToKeep;  // We populate this container with the tracks we want to keep
-    for (const auto& track : fEvent->GetTracks()) {
-        // If one children track is kept, we keep all the parents
-        if (trackIDsToKeep.count(track->GetTrackID()) > 0) {
+    auto& eventData = fEvent->fEventData;
+
+    std::set<int> trackIDsToKeep;
+
+    const auto tracks = fEvent->GetTracks();
+
+    for (const auto& track : tracks) {
+        if (trackIDsToKeep.count(track.GetTrackID()) > 0)
             continue;
-        }
-        const auto hits = track->GetHits();
-        for (int i = 0; i < int(hits.GetNumberOfHits()); i++) {
-            const auto energy = hits.GetEnergy(i);
-            if (!fSimulationManager->GetRestMetadata()->GetRemoveUnwantedTracksKeepZeroEnergyTracks() &&
-                energy <= 0) {
+
+        const auto hits = track.GetHits();
+
+        for (std::size_t i = 0;
+             i < track.GetNumberOfHits();
+             ++i) {
+
+            if (!metadata->GetRemoveUnwantedTracksKeepZeroEnergyTracks() &&
+                hits.GetEnergy(static_cast<int>(i)) <= 0) {
                 continue;
             }
-            const auto volume = metadata->GetGeant4GeometryInfo().GetVolumeFromID(hits.GetVolumeId(i));
-            if (metadata->IsKeepTracksVolume(volume)) {
-                trackIDsToKeep.insert(track->GetTrackID());
-                auto parentID = track->GetParentID();
-                while (parentID >= 0) {
-                    auto parentTrackIt = fEvent->GetTrackIDToTrackIndex().find(parentID);
-                    if (parentTrackIt == fEvent->GetTrackIDToTrackIndex().end()) {
-                        break;
-                    }
-                    const auto& parentTrack = fEvent->GetTracks()[parentTrackIt->second];
-                    trackIDsToKeep.insert(parentTrack->GetTrackID());
-                    parentID = parentTrack->GetParentID();
+
+            const auto volume =
+                metadata->GetGeant4GeometryInfo().GetVolumeFromID(
+                    track.GetHitVolumeID(i));
+
+            if (!metadata->IsKeepTracksVolume(volume))
+                continue;
+
+            trackIDsToKeep.insert(track.GetTrackID());
+
+            int parentID = track.GetParentID();
+
+            while (parentID >= 0) {
+                const auto parentTrackIt =
+                    fEvent->GetTrackIDToTrackIndex().find(parentID);
+
+                if (parentTrackIt ==
+                    fEvent->GetTrackIDToTrackIndex().end()) {
+                    break;
                 }
+
+                trackIDsToKeep.insert(parentID);
+
+                parentID =
+                    tracks[parentTrackIt->second].GetParentID();
             }
-        }
-    }
-    // const size_t numberOfTracksBefore = fEvent->GetTracks().size();
 
-    vector<TRestGeant4Track*> tracksAfterRemoval;
-    for (const auto& track : fEvent->GetTracks()) {
-        // we do this to preserve original order
-        if (trackIDsToKeep.count(track->GetTrackID()) > 0) {
-            tracksAfterRemoval.push_back(track);
+            break;
         }
     }
 
-    fEvent->GetTracks() = tracksAfterRemoval;
+    cout << "Event "
+         << fEvent->GetID()
+         << " tracks to keep "
+         << trackIDsToKeep.size()
+         << "/"
+         << fEvent->GetNumberOfTracks()
+         << endl;
 
-    // Updated indices
+    std::size_t i = 0;
+
+    while (i < eventData.trackIDs.size()) {
+        const int currentTrackID =
+            eventData.trackIDs[i];
+
+        if (trackIDsToKeep.count(currentTrackID) == 0) {
+            fEvent->RemoveTrackHits(i);
+
+            eventData.trackIDs.erase(
+                eventData.trackIDs.begin() + i);
+
+            eventData.parentIDs.erase(
+                eventData.parentIDs.begin() + i);
+
+            eventData.trackParticleNames.erase(
+                eventData.trackParticleNames.begin() + i);
+
+            eventData.trackCreatorProcesses.erase(
+                eventData.trackCreatorProcesses.begin() + i);
+
+            eventData.trackDepositedEnergy.erase(
+                eventData.trackDepositedEnergy.begin() + i);
+
+            eventData.trackInitialEnergies.erase(
+                eventData.trackInitialEnergies.begin() + i);
+
+            eventData.trackStartIndices.erase(
+                eventData.trackStartIndices.begin() + i);
+
+            eventData.trackNHits.erase(
+                eventData.trackNHits.begin() + i);
+
+            eventData.trackGlobalTimestamps.erase(
+                eventData.trackGlobalTimestamps.begin() + i);
+
+            eventData.trackTimeOffsets.erase(
+                eventData.trackTimeOffsets.begin() + i);
+
+            eventData.trackTimeLengths.erase(
+                eventData.trackTimeLengths.begin() + i);
+
+            eventData.trackLengths.erase(
+                eventData.trackLengths.begin() + i);
+
+            eventData.trackWeights.erase(
+                eventData.trackWeights.begin() + i);
+
+            eventData.trackInitialPositions.erase(
+                eventData.trackInitialPositions.begin() + i);
+
+            eventData.trackSecondariesIndices.erase(
+                eventData.trackSecondariesIndices.begin() + i);
+
+            eventData.trackSecondariesOffsets.erase(
+                eventData.trackSecondariesOffsets.begin() + i);
+
+            continue;
+        }
+
+        ++i;
+    }
+
     fEvent->GetTrackIDToTrackIndex().clear();
-    for (int i = 0; i < int(fEvent->GetTracks().size()); i++) {
-        fEvent->GetTrackIDToTrackIndex()[fEvent->GetTracks()[i]->GetTrackID()] = i;
+
+    for (std::size_t k = 0;
+         k < eventData.trackIDs.size();
+         ++k) {
+
+        fEvent->GetTrackIDToTrackIndex()[
+            eventData.trackIDs[k]] =
+            static_cast<int>(k);
     }
 
-    //fEvent->SyncTracksToEventData();
+    for (std::size_t k = 0;
+         k < eventData.trackIDs.size();
+         ++k) {
 
-    /*
-    const size_t numberOfTracksAfter = fEvent->GetTracks().size();
-    cout << "EventID: " << fEvent->GetID() << " Removed " << numberOfTracksBefore - numberOfTracksAfter
-         << " tracks out of " << numberOfTracksBefore << endl;
-     */
+        const int parentID =
+            eventData.parentIDs[k];
+
+        if (parentID > 0 &&
+            fEvent->GetTrackIDToTrackIndex().find(parentID) ==
+                fEvent->GetTrackIDToTrackIndex().end()) {
+
+            eventData.parentIDs[k] = 0;
+        }
+    }
 }

@@ -52,7 +52,7 @@ void RunAction::EndOfRunAction(const G4Run*) {
 
     if (G4Threading::IsMasterThread() || !G4Threading::IsMultithreadedApplication()) {
         G4cout << "============================= Run Summary =============================" << endl;
-        G4cout << restRun->GetEntries() << " events stored out of " << metadata->GetNumberOfEvents()
+        G4cout << restRun->GetSavedEntries() << " events stored out of " << metadata->GetNumberOfEvents()
                << " simulated events" << endl;
         G4cout << "=======================================================================" << endl;
     }

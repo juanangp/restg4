@@ -185,7 +185,7 @@ void SimulationManager::WriteEvents() {
     }
 
     const auto nRequestedEntries = GetRestMetadata()->GetNumberOfRequestedEntries();
-    if (nRequestedEntries > 0 && !fAbortFlag && fRestRun->GetEntries() >= nRequestedEntries) {
+    if (nRequestedEntries > 0 && !fAbortFlag && fRestRun->GetSavedEntries() >= nRequestedEntries) {
         G4cout << "Stopping Run! We have reached the number of requested entries (" << nRequestedEntries
                << ")" << endl;
         StopSimulation();
@@ -272,7 +272,7 @@ void SimulationManager::SyncStatsFromChild(OutputManager* outputManager) {
     lock_guard<mutex> guard(fSimulationManagerMutex);
     fNumberOfProcessedEvents += outputManager->GetEventCounter();
     outputManager->ResetEventCounter();
-    fNumberOfStoredEvents = fRestRun->GetEntries();
+    fNumberOfStoredEvents = fRestRun->GetSavedEntries();
 }
 
 // OutputManager
@@ -362,7 +362,7 @@ void OutputManager::UpdateEvent() {
     }
 }
 
-bool OutputManager::IsEmptyEvent() const { return !fEvent || fEvent->GetTracks().empty(); }
+bool OutputManager::IsEmptyEvent() const { return !fEvent || fEvent->GetNumberOfTracks() == 0; }
 
 bool OutputManager::IsValidEvent() const {
     if (IsEmptyEvent()) {
@@ -388,7 +388,6 @@ void OutputManager::FinishAndSubmitEvent() {
         if (fSimulationManager->GetRestMetadata()->GetRemoveUnwantedTracks())
             RemoveUnwantedTracks();
 
-        fEvent->SyncTracksToEventData();
 
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> elapsed = end - fEventTimeStart;
@@ -406,10 +405,14 @@ void OutputManager::RecordTrack(const G4Track* track) {
     if (!IsValidTrack(track)) {
         return;
     }
-    fEvent->InsertTrack(track);
+    if (!fEvent->InsertTrack(track)) {
+        return;
+    }
 
     if (fEvent->fInfo.subEventID > 0) {
-        assert(fEvent->fTracks.back()->GetTrackID() == track->GetTrackID());
+        const auto storedTrack =
+            fEvent->GetTrack(fEvent->GetNumberOfTracks() - 1);
+        assert(storedTrack.GetTrackID() == track->GetTrackID());
     }
 }
 

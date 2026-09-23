@@ -68,7 +68,7 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
         worldSolid->GetXHalfLength(), worldSolid->GetYHalfLength(), worldSolid->GetZHalfLength()};
 
     restG4Metadata->fGeant4GeometryInfo.InitializeOnDetectorConstruction(gdmlToRead, worldVolume);
-    //restG4Metadata->ReadDetector();
+    restG4Metadata->SyncActiveVolumesFromMetadata();
     restG4Metadata->PrintMetadata();  // now we have detector info
 
     const auto& geometryInfo = restG4Metadata->GetGeant4GeometryInfo();
@@ -112,22 +112,21 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
     }
     filesystem::current_path(startingPath);
 
-    auto sensitiveVolume = (string)restG4Metadata->GetSensitiveVolume();
+    auto sensitiveVolumes = restG4Metadata->GetSensitiveVolumes();
+    for(const auto &sensitiveVolume : sensitiveVolumes){
     G4VPhysicalVolume* sensitivePhysicalVolume = GetPhysicalVolume(sensitiveVolume);
-    if (sensitivePhysicalVolume == nullptr) {
+      if (sensitivePhysicalVolume == nullptr) {
         // sensitive volume was not found, perhaps the user specified a logical volume
-        auto physicalVolumes = geometryInfo.GetAllPhysicalVolumesFromLogical(sensitiveVolume);
-        if (physicalVolumes.size() == 1) {
-            restG4Metadata->InsertSensitiveVolume(
-                geometryInfo.GetAlternativeNameFromGeant4PhysicalName(physicalVolumes[0]));
-            sensitiveVolume = (string)restG4Metadata->GetSensitiveVolume();
-            sensitivePhysicalVolume = GetPhysicalVolume(sensitiveVolume);
-        }
-    }
-
-    if (sensitivePhysicalVolume == nullptr) {
         cerr << "ERROR: Sensitive volume '" << sensitiveVolume << "' not found" << endl;
         exit(1);
+      } else {
+        G4LogicalVolume* volume = sensitivePhysicalVolume->GetLogicalVolume();
+        G4Material* material = volume->GetMaterial();
+        G4cout << "Sensitive volume "<< sensitiveVolume <<" properties:" << G4endl;
+        G4cout << "\t- Material: " << material->GetName() << G4endl;
+        G4cout << "\t- Temperature: " << material->GetTemperature() << " K" << G4endl;
+        G4cout << "\t- Density: " << material->GetDensity() / (g / cm3) << " g/cm3" << G4endl;
+      }
     }
 
     Double_t mx = restG4Metadata->GetMagneticField().X() * tesla;
@@ -140,17 +139,10 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
     fieldMgr->SetDetectorField(magField);
     fieldMgr->CreateChordFinder(magField);
 
-    G4LogicalVolume* volume = sensitivePhysicalVolume->GetLogicalVolume();
-    G4Material* material = volume->GetMaterial();
-    G4cout << "Sensitive volume properties:" << G4endl;
-    G4cout << "\t- Material: " << material->GetName() << G4endl;
-    G4cout << "\t- Temperature: " << material->GetTemperature() << " K" << G4endl;
-    G4cout << "\t- Density: " << material->GetDensity() / (g / cm3) << " g/cm3" << G4endl;
-
     const auto& primaryGeneratorInfo = restG4Metadata->GetGeant4PrimaryGeneratorInfo();
     // Getting generation volume
     const auto fromVolume = primaryGeneratorInfo.GetSpatialGeneratorFrom();
-    if (fromVolume != "NO_SUCH_PARA") {
+    if (fromVolume.empty()) {
         cout << "Generated from volume: " << primaryGeneratorInfo.GetSpatialGeneratorFrom() << endl;
     }
     cout << "Generator type: " << primaryGeneratorInfo.GetSpatialGeneratorType() << endl;
@@ -159,7 +151,7 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
         StringToSpatialGeneratorTypes(primaryGeneratorInfo.GetSpatialGeneratorType());
 
     if (spatialGeneratorTypeEnum == TRestGeant4PrimaryGeneratorTypes::SpatialGeneratorTypes::VOLUME &&
-        primaryGeneratorInfo.GetSpatialGeneratorFrom() != "Not defined") {
+        !primaryGeneratorInfo.GetSpatialGeneratorFrom().empty()) {
         auto generatorGeometryName = primaryGeneratorInfo.GetSpatialGeneratorFrom();
         G4VPhysicalVolume* gdmlPhysicalVolume = GetPhysicalVolume(generatorGeometryName);
         if (gdmlPhysicalVolume != nullptr && !geometryInfo.IsValidPhysicalVolume(generatorGeometryName)) {
