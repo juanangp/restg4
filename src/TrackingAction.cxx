@@ -2,6 +2,10 @@
 
 #include "TrackingAction.h"
 
+#include <TRestGeant4Event.h>
+#include <TRestGeant4Metadata.h>
+#include <TRestGeant4Track.h>
+
 #include <G4ParticleTypes.hh>
 #include <G4RunManager.hh>
 #include <G4SystemOfUnits.hh>

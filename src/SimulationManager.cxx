@@ -1,5 +1,14 @@
 
+#include <TRestGeant4Event.h>
+
 #include "SimulationManager.h"
+
+#include <G4Event.hh>
+#include <G4RunManager.hh>
+
+#include <TRestGeant4Metadata.h>
+#include <TRestGeant4PhysicsLists.h>
+#include <TRestRun.h>
 #include "SteppingAction.h"
 
 #include <G4EventManager.hh>

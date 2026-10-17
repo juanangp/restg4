@@ -1,13 +1,15 @@
 
 #include "EventAction.h"
 
+#include <TRestGeant4Event.h>
+#include <TRestGeant4Metadata.h>
+#include <TRestGeant4Track.h>
+
 #include <TRestRun.h>
 
 #include <G4Event.hh>
 #include <G4RunManager.hh>
 #include <Randomize.hh>
-#include <fstream>
-#include <iomanip>
 
 #include "SimulationManager.h"
 

@@ -1,7 +1,12 @@
 
 #include "DetectorConstruction.h"
 
+#include <TRestGeant4Event.h>
+#include <TRestGeant4Metadata.h>
+#include <G4GDMLParser.hh>
+
 #include <SensitiveDetector.h>
+#include <TGeoManager.h>
 #include <TRestGeant4GeometryInfo.h>
 
 #include <G4FieldManager.hh>

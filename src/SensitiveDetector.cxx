@@ -1,4 +1,6 @@
 
+#include <TRestGeant4Metadata.h>
+
 #include "SensitiveDetector.h"
 
 #include <G4Geantino.hh>

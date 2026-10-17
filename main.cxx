@@ -1,4 +1,6 @@
 
+#include <TRestSystemOfUnits.h>
+
 #include "Application.h"
 
 using namespace std;
@@ -18,6 +20,8 @@ constexpr auto banner =
     "🐞 Bug reports: https://github.com/rest-for-physics/restG4/issues\n";
 
 int main(int argc, char* argv[]) {
+    REST_Units::SetGeoManagerDefaultUnits();
+
     cout << banner << endl;
 
     Application app;

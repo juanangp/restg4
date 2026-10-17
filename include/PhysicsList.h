@@ -2,14 +2,14 @@
 #ifndef PhysicsList_h
 #define PhysicsList_h 1
 
-#include <TRestGeant4PhysicsLists.h>
 
 #include <G4EmConfigurator.hh>
 #include <G4VModularPhysicsList.hh>
 #include <globals.hh>
 
-#include "SimulationManager.h"
 
+class SimulationManager;
+class TRestGeant4PhysicsLists;
 class PhysicsList : public G4VModularPhysicsList {
    public:
     PhysicsList() = delete;

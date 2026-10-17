@@ -1,5 +1,10 @@
 
+#include <TRestGeant4ParticleState.h>
+
 #include "PrimaryGeneratorAction.h"
+
+#include "DetectorConstruction.h"
+#include <TRestGeant4PrimaryGeneratorInfo.h>
 
 #include <TF1.h>
 #include <TF2.h>

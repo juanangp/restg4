@@ -1,6 +1,8 @@
 
 #include "SteppingAction.h"
 
+#include <G4RunManager.hh>
+
 #include <TRestGeant4Event.h>
 #include <TRestGeant4Metadata.h>
 #include <TRestGeant4Track.h>

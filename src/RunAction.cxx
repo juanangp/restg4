@@ -1,11 +1,12 @@
 
+#include <TRestGeant4Metadata.h>
+
 #include "RunAction.h"
 
 #include <TRestRun.h>
 
 #include <G4Run.hh>
 #include <G4RunManager.hh>
-#include <iomanip>
 
 #include "PrimaryGeneratorAction.h"
 #include "SimulationManager.h"

@@ -1,4 +1,6 @@
 
+#include <TRestGeant4Event.h>
+
 #include "Application.h"
 
 #include <TGeoManager.h>

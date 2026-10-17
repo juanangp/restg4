@@ -1,5 +1,10 @@
 
+#include <TRestGeant4Metadata.h>
+
 #include "PhysicsList.h"
+
+#include <TRestGeant4PhysicsLists.h>
+#include "SimulationManager.h"
 
 #include <CLHEP/Units/PhysicalConstants.h>
 

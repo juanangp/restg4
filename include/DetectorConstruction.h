@@ -2,13 +2,14 @@
 #ifndef DetectorConstruction_h
 #define DetectorConstruction_h 1
 
-#include <TRestGeant4Event.h>
-#include <TRestGeant4Metadata.h>
 
-#include <G4GDMLParser.hh>
 #include <G4PhysicalVolumeStore.hh>
+#include <Rtypes.h>
+
+#include <G4VSolid.hh>
 #include <G4VUserDetectorConstruction.hh>
 
+class G4GDMLParser;
 class SimulationManager;
 
 class DetectorConstruction : public G4VUserDetectorConstruction {

@@ -1,5 +1,9 @@
 
+#include <TRestGeant4Metadata.h>
+
 #include "StackingAction.h"
+
+#include "SimulationManager.h"
 
 #include <G4ParticleTable.hh>
 #include <G4ParticleTypes.hh>

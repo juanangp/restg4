@@ -3,11 +3,8 @@
 #define REST_SIMULATIONMANAGER_H
 
 #include <TRestGeant4Event.h>
-#include <TRestGeant4Metadata.h>
 #include <TRandom.h>
-#include <TRestGeant4PhysicsLists.h>
 #include <TRestGeant4Track.h>
-#include <TRestRun.h>
 
 #include <TH1D.h>
 
@@ -16,6 +13,9 @@
 #include <queue>
 #include <thread>
 
+class TRestGeant4Metadata;
+class TRestGeant4PhysicsLists;
+class TRestRun;
 class OutputManager;
 
 class SimulationManager {

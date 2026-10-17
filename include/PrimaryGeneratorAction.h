@@ -7,7 +7,6 @@
 #include <TRandom.h>
 #include <TRestGeant4ParticleState.h>
 #include <TRestGeant4PrimaryGeneratorInfo.h>
-#include <TRestGeant4PrimaryGeneratorInfo.h>
 
 #include <G4IonTable.hh>
 #include <G4ParticleGun.hh>
@@ -17,7 +16,6 @@
 #include <iostream>
 #include <mutex>
 
-#include "DetectorConstruction.h"
 
 class G4Event;
 class SimulationManager;
