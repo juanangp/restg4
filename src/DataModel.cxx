@@ -1,8 +1,6 @@
 #include <G4Event.hh>
 #include <G4HadronicProcess.hh>
 #include <G4Nucleus.hh>
-#include <G4Threading.hh>
-#include <Randomize.hh>
 
 #include <TRestGeant4Metadata.h>
 #include <TRestGeant4PhysicsInfo.h>
@@ -10,7 +8,6 @@
 #include <TRestGeant4Event.h>
 
 #include "SimulationManager.h"
-#include "SteppingAction.h"
 
 static double globalTimeOffset = 0;
 

@@ -9,12 +9,9 @@
 #include <TRestGeant4Metadata.h>
 #include <TRestGeant4PhysicsLists.h>
 #include <TRestRun.h>
-#include "SteppingAction.h"
 
 #include <G4EventManager.hh>
-#include <G4Nucleus.hh>
 #include <G4Threading.hh>
-#include <Randomize.hh>
 #include <csignal>
 
 using namespace std;

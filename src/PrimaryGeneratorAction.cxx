@@ -4,21 +4,17 @@
 #include "PrimaryGeneratorAction.h"
 
 #include "DetectorConstruction.h"
-#include <TRestGeant4PrimaryGeneratorInfo.h>
 
 #include <TF1.h>
 #include <TF2.h>
-#include <TH2D.h>
 #include <TRestGeant4Metadata.h>
 #include <TRestGeant4PrimaryGeneratorInfo.h>
 
-#include <G4Event.hh>
 #include <G4IonTable.hh>
 #include <G4ParticleDefinition.hh>
 #include <G4ParticleTable.hh>
 #include <G4RunManager.hh>
 #include <G4SystemOfUnits.hh>
-#include <G4UnitsTable.hh>
 #include <Randomize.hh>
 
 #include "SimulationManager.h"

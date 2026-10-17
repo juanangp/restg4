@@ -6,46 +6,30 @@
 #include <TRestGeant4PhysicsLists.h>
 #include "SimulationManager.h"
 
-#include <CLHEP/Units/PhysicalConstants.h>
 
-#include <G4BetheBlochIonGasModel.hh>
-#include <G4BraggIonGasModel.hh>
 #include <G4DecayPhysics.hh>
 #include <G4EmExtraPhysics.hh>
 #include <G4EmLivermorePhysics.hh>
-#include <G4EmParameters.hh>
 #include <G4EmPenelopePhysics.hh>
 #include <G4EmStandardPhysics_option3.hh>
 #include <G4EmStandardPhysics_option4.hh>
-#include <G4HadronElasticPhysics.hh>
 #include <G4HadronElasticPhysicsHP.hh>
 #include <G4HadronPhysicsQGSP_BIC_HP.hh>
 #include <G4IonBinaryCascadePhysics.hh>
-#include <G4IonFluctuations.hh>
-#include <G4IonParametrisedLossModel.hh>
 #include <G4IonTable.hh>
 #include <G4LossTableManager.hh>
 #include <G4NeutronTrackingCut.hh>
 #include <G4ParticleHPManager.hh>
-#include <G4ParticleTable.hh>
-#include <G4ParticleTypes.hh>
 #include <G4PhotonEvaporation.hh>
 #include <G4ProcessManager.hh>
-#include <G4ProductionCuts.hh>
 #include <G4RadioactiveDecay.hh>
 #include <G4RadioactiveDecayPhysics.hh>
-#include <G4Region.hh>
-#include <G4RegionStore.hh>
 #include <G4StepLimiter.hh>
-#include <G4StoppingPhysics.hh>
 #include <G4SystemOfUnits.hh>
-#include <G4UAtomicDeexcitation.hh>
 #include <G4UImanager.hh>
 #include <G4UnitsTable.hh>
-#include <G4UniversalFluctuation.hh>
 #include <G4Version.hh>
 
-#include "Particles.h"
 
 using namespace std;
 

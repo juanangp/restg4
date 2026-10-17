@@ -5,10 +5,8 @@
 
 #include <TRestRun.h>
 
-#include <G4Run.hh>
 #include <G4RunManager.hh>
 
-#include "PrimaryGeneratorAction.h"
 #include "SimulationManager.h"
 #include "SteppingVerbose.h"
 

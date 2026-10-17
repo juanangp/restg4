@@ -2,15 +2,7 @@
 
 #include "TrackingAction.h"
 
-#include <TRestGeant4Event.h>
-#include <TRestGeant4Metadata.h>
-#include <TRestGeant4Track.h>
 
-#include <G4ParticleTypes.hh>
-#include <G4RunManager.hh>
-#include <G4SystemOfUnits.hh>
-#include <G4Track.hh>
-#include <G4UnitsTable.hh>
 
 #include "SimulationManager.h"
 

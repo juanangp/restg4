@@ -4,7 +4,6 @@
 #include "Application.h"
 
 #include <TGeoManager.h>
-#include <TKey.h>
 #include <TObjArray.h>
 #include <TObjString.h>
 #include <TPRegexp.h>
@@ -29,11 +28,7 @@
 
 #include "ActionInitialization.h"
 #include "DetectorConstruction.h"
-#include "EventAction.h"
 #include "PhysicsList.h"
-#include "PrimaryGeneratorAction.h"
-#include "RunAction.h"
-#include "SteppingAction.h"
 #include "SteppingVerbose.h"
 
 #ifdef G4VIS_USE

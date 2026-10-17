@@ -1,7 +1,6 @@
 
 #include "DetectorConstruction.h"
 
-#include <TRestGeant4Event.h>
 #include <TRestGeant4Metadata.h>
 #include <G4GDMLParser.hh>
 
@@ -10,12 +9,10 @@
 #include <TRestGeant4GeometryInfo.h>
 
 #include <G4FieldManager.hh>
-#include <G4IonTable.hh>
 #include <G4Isotope.hh>
 #include <G4LogicalVolumeStore.hh>
 #include <G4MagneticField.hh>
 #include <G4Material.hh>
-#include <G4RunManager.hh>
 #include <G4SDManager.hh>
 #include <G4SystemOfUnits.hh>
 #include <G4UniformMagField.hh>
