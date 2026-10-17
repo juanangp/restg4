@@ -165,27 +165,45 @@ void SimulationManager::InsertEvent(std::unique_ptr<TRestGeant4Event>& event) {
     fEventContainer.push(std::move(event));
 }
 
-void SimulationManager::WriteEvents() {
-    lock_guard<mutex> guard(fSimulationManagerMutex);
-
-    if (fEventContainer.empty()) {
+void SimulationManager::WriteEvents(bool blocking) {
+    unique_lock<mutex> writeLock(fWriteMutex, defer_lock);
+    if (blocking) {
+        writeLock.lock();
+    } else if (!writeLock.try_lock()) {
         return;
     }
 
-    while (!fEventContainer.empty()) {
-        fEvent.MoveFrom(std::move(*fEventContainer.front()));
+    bool wrote = false;
+    while (true) {
+        unique_ptr<TRestGeant4Event> event;
+        {
+            lock_guard<mutex> guard(fSimulationManagerMutex);
+            if (fEventContainer.empty()) {
+                break;
+            }
+            event = std::move(fEventContainer.front());
+            fEventContainer.pop();
+        }
+
+        fEvent.MoveFrom(std::move(*event));
+        event.reset();
 
         if (!fRestGeant4Metadata->GetStoreTracks()) {
             fEvent.ClearTracks();
         }
 
         fRestRun->Fill();
-
-        fEventContainer.pop();
+        wrote = true;
     }
 
+    if (!wrote) {
+        return;
+    }
+
+    fNumberOfStoredEvents = fRestRun->GetSavedEntries();
+
     const auto nRequestedEntries = GetRestMetadata()->GetNumberOfRequestedEntries();
-    if (nRequestedEntries > 0 && !fAbortFlag && fRestRun->GetSavedEntries() >= nRequestedEntries) {
+    if (nRequestedEntries > 0 && !fAbortFlag && fNumberOfStoredEvents >= nRequestedEntries) {
         G4cout << "Stopping Run! We have reached the number of requested entries (" << nRequestedEntries
                << ")" << endl;
         StopSimulation();
@@ -272,7 +290,6 @@ void SimulationManager::SyncStatsFromChild(OutputManager* outputManager) {
     lock_guard<mutex> guard(fSimulationManagerMutex);
     fNumberOfProcessedEvents += outputManager->GetEventCounter();
     outputManager->ResetEventCounter();
-    fNumberOfStoredEvents = fRestRun->GetSavedEntries();
 }
 
 // OutputManager
@@ -396,7 +413,7 @@ void OutputManager::FinishAndSubmitEvent() {
         fEvent->fEventData.eventTimeWallPrimaryGeneration = fEventTimeWallPrimaryGeneration;
 
         fSimulationManager->InsertEvent(fEvent);
-        fSimulationManager->WriteEvents();
+        fSimulationManager->WriteEvents(false);
     }
     UpdateEvent();
 }

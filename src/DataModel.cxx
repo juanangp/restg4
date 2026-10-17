@@ -385,11 +385,9 @@ void TRestGeant4Event::InsertStep(const G4Step* step) {
     fEventData.hitKineticEnergy.push_back(
         track->GetKineticEnergy() / CLHEP::keV);
 
-    fEventData.hitMomentumDirection.push_back({
-        momentum.x(),
-        momentum.y(),
-        momentum.z()
-    });
+    fEventData.hitMomentumDirectionX.push_back(momentum.x());
+    fEventData.hitMomentumDirectionY.push_back(momentum.y());
+    fEventData.hitMomentumDirectionZ.push_back(momentum.z());
 
     if (metadata->GetStoreHadronicTargetInfo()) {
         string isotopeName = "";

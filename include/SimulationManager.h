@@ -11,6 +11,8 @@
 
 #include <TH1D.h>
 
+#include <atomic>
+#include <mutex>
 #include <queue>
 #include <thread>
 
@@ -28,7 +30,8 @@ class SimulationManager {
 
     void InsertEvent(std::unique_ptr<TRestGeant4Event>& event);
 
-    void WriteEvents();
+    // blocking=false returns immediately if another thread is already writing (it drains the queue)
+    void WriteEvents(bool blocking = true);
 
     std::unique_ptr<std::thread> fPeriodicPrintThread = nullptr;
     bool fPeriodicPrintThreadEndFlag = false;
@@ -66,6 +69,7 @@ class SimulationManager {
    private:
     static thread_local OutputManager* fOutputManager;
     std::mutex fSimulationManagerMutex;
+    std::mutex fWriteMutex;  // serializes fEvent and TTree::Fill, never held while pushing events
     std::queue<std::unique_ptr<TRestGeant4Event> > fEventContainer;
 
     TRestRun* fRestRun = nullptr;
@@ -74,9 +78,9 @@ class SimulationManager {
     TRandom fDecayRandomMethod;
 
     int fNumberOfProcessedEvents = 0;
-    int fNumberOfStoredEvents = 0;
+    std::atomic<int> fNumberOfStoredEvents{0};
 
-    bool fAbortFlag = false;
+    std::atomic<bool> fAbortFlag{false};
 
     std::vector<OutputManager*> fOutputManagerContainer = {};
     long fTimeStartUnix = 0;

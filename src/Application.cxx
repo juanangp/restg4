@@ -583,10 +583,6 @@ void Application::ValidateOutputFile(const string& filename) {
         error = true;
         cerr << "'AnalysisTree' not found in output file" << endl;
     }
-    if (!run.GetMetadataClass("TRestRun")) {
-        error = true;
-        cerr << "'TRestRun' metadata not found in output file" << endl;
-    }
     if (!run.GetMetadataClass("TRestGeant4PhysicsLists")) {
         error = true;
         cerr << "'PhysicsList' metadata not found in output file" << endl;
