@@ -372,7 +372,7 @@ void Application::Run(const CommandLineOptions::Options& options) {
 
     fSimulationManager.SetRestPhysicsLists(g4Manager->fG4PhysicsLists);
 
-    auto run = g4Manager->fConfiguredRun;
+    auto run = g4Manager->GetRunInfo();
     fSimulationManager.SetRestRun(run);
 
     if (options.runNumber >= 0) {

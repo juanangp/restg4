@@ -17,9 +17,16 @@ if(CMAKE_PROJECT_NAME STREQUAL "restG4")
   endforeach()
 
   find_package(yaml-cpp REQUIRED)
+  if(TARGET yaml-cpp::yaml-cpp)
+    set(YAML_CPP_TARGET yaml-cpp::yaml-cpp)
+  else()
+    set(YAML_CPP_TARGET yaml-cpp)
+  endif()
   
   # Si es aislado, definimos los nombres canónicos que faltan del padre
   set(GEANT4_LIB RestGeant4) 
+else()
+  set(YAML_CPP_TARGET yaml-cpp::yaml-cpp)
 endif()
 
 # Requisito obligatorio del paquete: Motor Geant4
@@ -59,7 +66,7 @@ target_link_libraries(
     ${GEANT4_LIB}              # Ahora siempre vale "RestGeant4", garantizando el enlace
     ${Geant4_LIBRARIES}        # Librerías nativas de Geant4
     ${ROOT_TARGET_LIBRARIES}   # Librerías modernas ROOT::Core, ROOT::Tree, etc.
-    yaml-cpp
+    ${YAML_CPP_TARGET}         # yaml-cpp::yaml-cpp (o yaml-cpp si yaml-cpp < 0.8 en modo aislado)
 )
 
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/examples DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
@@ -72,5 +79,8 @@ install(FILES ${RESTG4_HEADERS} DESTINATION include)
 # --- Generación del Binario Ejecutable Final ---
 add_executable(restG4 main.cxx)
 target_link_libraries(restG4 PRIVATE RestG4)
+if(COMMAND rest_link_registered_libraries)
+  rest_link_registered_libraries(restG4 ${GEANT4_LIB})
+endif()
 install(TARGETS restG4 RUNTIME DESTINATION bin)
 
