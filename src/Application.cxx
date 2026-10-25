@@ -549,7 +549,7 @@ void Application::ValidateOutputFile(const string& filename) {
 
     auto run = TRestRun(filename);
 
-    TRestEvent* restEvent = run.GetInputEvent();
+    TRestEvent* restEvent = run.GetEvent();
 
     if (restEvent == nullptr) {
       error = true;
