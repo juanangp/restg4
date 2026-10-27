@@ -217,69 +217,16 @@ void SimulationManager::WriteEvents(bool blocking) {
 }
 
 void SimulationManager::InitializeUserDistributions() {
-
     if (fRestGeant4Metadata == nullptr || fRestGeant4Metadata->GetNumberOfSources() == 0) {
-        G4Exception(
-            "SimulationManager::InitializeUserDistributions",
-            "REST_G4_NO_PARTICLE_SOURCE",
-            FatalException,
-            "No particle sources or user distributions registered."
-        );
+        G4Exception("SimulationManager::InitializeUserDistributions", "REST_G4_NO_PARTICLE_SOURCE",
+                    FatalException, "No generator or particle sources defined");
     }
-    long geant4Seed = fRestGeant4Metadata->GetSeed();
-    long decaySeed = fRestGeant4Metadata->GetGeant4PrimaryGeneratorInfo().fSeed;
-    if (decaySeed == 0) decaySeed = geant4Seed;
-    fDecayRandomMethod.SetSeed(static_cast<ULong_t>(decaySeed));
-    for (int i = 0; i < fRestGeant4Metadata->GetNumberOfSources(); i++) {
-        fRestGeant4Metadata->GetParticleSource(i)->SetRandomMethod(&fDecayRandomMethod);
-    }
-
-    TRestGeant4ParticleSource* source = fRestGeant4Metadata->GetParticleSource(0);
-
-    if (TRestGeant4PrimaryGeneratorTypes::StringToEnergyDistributionTypes(
-            source->GetEnergyDistributionType()) ==
-        TRestGeant4PrimaryGeneratorTypes::EnergyDistributionTypes::TH1D) {
-        TFile file(source->GetEnergyDistributionFilename().c_str());
-        auto distribution = (TH1D*)file.Get(source->GetEnergyDistributionNameInFile().c_str());
-
-        if (!distribution) {
-            std::ostringstream errMsg;
-            errMsg << "\n---------------------------------------------------------\n"
-               << "Error when trying to find energy spectrum\n"
-               << "File: " << source->GetEnergyDistributionFilename() << "\n"
-               << "Spectrum name: " << source->GetEnergyDistributionNameInFile();
-            G4Exception(
-              "SimulationManager::InitializeUserDistributions",
-              "REST_G4_NO_ENERGY_SPECTRUM",
-              FatalException,
-              errMsg.str().c_str() 
-            );
-        }
-
-        fPrimaryEnergyDistribution = *distribution;
-    }
-
-    if (TRestGeant4PrimaryGeneratorTypes::StringToAngularDistributionTypes(
-            source->GetAngularDistributionType()) ==
-        TRestGeant4PrimaryGeneratorTypes::AngularDistributionTypes::TH1D) {
-        TFile file(source->GetAngularDistributionFilename().c_str());
-        auto distribution = (TH1D*)file.Get(source->GetAngularDistributionNameInFile().c_str());
-
-        if (!distribution) {
-            std::ostringstream errMsg;
-            errMsg << "\n---------------------------------------------------------\n"
-               << "Error when trying to find angular spectrum\n"
-               << "File: " << source->GetAngularDistributionFilename() << "\n"
-               << "Spectrum name: " << source->GetAngularDistributionNameInFile();
-            G4Exception(
-              "SimulationManager::InitializeUserDistributions",
-              "REST_G4_NO_ANGULAR_SPECTRUM",
-              FatalException,
-              errMsg.str().c_str() 
-            );
-        }
-
-        fPrimaryAngularDistribution = *distribution;
+    // Formulas, histograms and Decay0 files, read once and copied by the generator of each thread
+    try {
+        fRestGeant4Metadata->GetGeant4PrimaryGeneratorInfo().LoadDistributions();
+    } catch (const std::exception& error) {
+        G4Exception("SimulationManager::InitializeUserDistributions", "REST_G4_GENERATOR", FatalException,
+                    error.what());
     }
 }
 
@@ -371,7 +318,10 @@ void OutputManager::UpdateEvent() {
     const int primaryParticles = primaryVertex != nullptr ? primaryVertex->GetNumberOfParticle() : 0;
     const int numberOfSources = metadata->GetNumberOfSources();
 
-    if (primaryParticles != numberOfSources && int(fEvent->GetNumberOfPrimaries()) != numberOfSources) {
+    // A Decay0 source gives the particles of its event
+    const bool decay0 = metadata->GetGeant4PrimaryGeneratorInfo().HasDecay0Sources();
+    if (!decay0 && primaryParticles != numberOfSources &&
+        int(fEvent->GetNumberOfPrimaries()) != numberOfSources) {
         std::ostringstream errMsg;
             errMsg << "\n---------------------------------------------------------\n"
             << "TRestGeant4Event: Number of particles on primary vertex does not match number of sources for event ID: "

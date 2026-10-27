@@ -2,95 +2,40 @@
 #ifndef PrimaryGeneratorAction_h
 #define PrimaryGeneratorAction_h 1
 
-#include <TF3.h>
-#include <TH1D.h>
-#include <TRandom.h>
 #include <TRestGeant4ParticleState.h>
-#include <TRestGeant4PrimaryGeneratorInfo.h>
+#include <TRestGeant4PrimaryGenerator.h>
 
-#include <G4IonTable.hh>
 #include <G4ParticleGun.hh>
 #include <G4VUserPrimaryGeneratorAction.hh>
-#include <fstream>
-#include <globals.hh>
-#include <iostream>
-#include <mutex>
-
+#include <map>
+#include <memory>
+#include <string>
+#include <utility>
 
 class G4Event;
+class G4ParticleDefinition;
 class SimulationManager;
 
+/// Fills the particle gun with the primaries sampled by TRestGeant4PrimaryGenerator (one per thread)
 class PrimaryGeneratorAction : public G4VUserPrimaryGeneratorAction {
    public:
     PrimaryGeneratorAction(SimulationManager*);
-    ~PrimaryGeneratorAction();
+    ~PrimaryGeneratorAction() override;
 
-   public:
-    virtual void GeneratePrimaries(G4Event*);
-
-    void SetEnergyDistributionHistogram(const TH1D* h, double eMin = 0, double eMax = 0);
-    inline void SetAngularDistributionHistogram(const TH1D* h) { fAngularDistributionHistogram = h; }
-
-    void SetGeneratorSpatialDensity(TString str);
+    void GeneratePrimaries(G4Event*) override;
 
    private:
     SimulationManager* fSimulationManager;
 
-    static std::mutex fDistributionFormulaMutex;
-    static std::mutex fPrimaryGenerationMutex;
-    TRestGeant4PrimaryGeneratorInfo fPrimaryGeneratorInfo;
-    TRandom fDecayRandomMethod;
-
-    std::vector<TRestGeant4ParticleState> fTempParticles;
+    /// Created at the first event, once the geometry (GDML placement, cosmic radius) is known
+    std::unique_ptr<TRestGeant4PrimaryGenerator> fGenerator;
 
     G4ParticleGun fParticleGun;
-    G4ParticleDefinition* fParticle = nullptr;
 
-    const TH1D* fEnergyDistributionHistogram = nullptr;
-    const TH1D* fAngularDistributionHistogram = nullptr;
+    /// Particle definitions by name and excitation (keV)
+    std::map<std::pair<std::string, double>, G4ParticleDefinition*> fParticles;
 
-    static TF1* fEnergyDistributionFunction;
-    static TF1* fAngularDistributionFunction;
-    static TF2* fEnergyAndAngularDistributionFunction;
-
-    TF3* fGeneratorSpatialDensityFunction;
-
-    Double_t fCosmicCircumscribedSphereRadius = 0.;
-
-    Int_t startEnergyBin;
-    Int_t endEnergyBin;
-    Double_t fSpectrumIntegral;
-
-    Double_t energyFactor;
-
-    Double_t lastEnergy;
-
-    TRandom* fRandom = nullptr;
-
-    void SetParticlePosition();
-    G4ParticleDefinition* SetParticleDefinition(Int_t particleSourceIndex,
-                                                const TRestGeant4ParticleState& particle);
-    void SetParticleEnergy(Int_t particleSourceIndex, const TRestGeant4ParticleState& particle);
-    void SetParticleDirection(Int_t particleSourceIndex, const TRestGeant4ParticleState& particle);
-
-    void SetParticleEnergyAndDirection(Int_t particleSourceIndex, const TRestGeant4ParticleState& particle);
-
-    G4ThreeVector GetIsotropicVector() const;
-
-    void GenPositionOnGDMLVolume(double& x, double& y, double& z);
-    void GenPositionOnGDMLSurface(double& x, double& y, double& z);
-    void GenPositionOnBoxVolume(double& x, double& y, double& z);
-    void GenPositionOnBoxSurface(double& x, double& y, double& z);
-    void GenPositionOnSphereVolume(double& x, double& y, double& z);
-    void GenPositionOnSphereSurface(double& x, double& y, double& z);
-    void GenPositionOnCylinderVolume(double& x, double& y, double& z);
-    void GenPositionOnCylinderSurface(double& x, double& y, double& z);
-    void GenPositionOnPoint(double& x, double& y, double& z);
-    void GenPositionOnWall(double& x, double& y, double& z);
-    void GenPositionOnDisk(double& x, double& y, double& z);
-
-    G4String fParType;
-    G4String fGenType;
+    G4ParticleDefinition* FindParticle(const TRestGeant4ParticleState& particle);
 };
 
 #endif

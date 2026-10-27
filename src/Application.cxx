@@ -439,8 +439,16 @@ void Application::Run(const CommandLineOptions::Options& options) {
 
     runManager->Initialize();
 
-    // Import the pre-validated path. This automatically initializes ROOT's native 'gGeoManager' global pointer
-    TGeoManager::Import(gdmlPath.c_str());
+    // Import the pre-validated path. This automatically initializes ROOT's native 'gGeoManager' global pointer.
+    // ROOT resolves GDML external entities (e.g. materials.xml) relative to the working directory,
+    // so we move to the GDML directory while importing, as DetectorConstruction does for Geant4
+    {
+        const auto currentDirectory = filesystem::current_path();
+        const auto gdmlDirectory = filesystem::path(gdmlPath).parent_path();
+        if (!gdmlDirectory.empty()) filesystem::current_path(gdmlDirectory);
+        TGeoManager::Import(filesystem::path(gdmlPath).filename().c_str());
+        filesystem::current_path(currentDirectory);
+    }
     
     if (gGeoManager == nullptr) {
         std::cerr << "ERROR: ROOT engine failed to initialize gGeoManager from valid path: " << gdmlPath << std::endl;

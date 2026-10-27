@@ -75,7 +75,6 @@ class SimulationManager {
     TRestRun* fRestRun = nullptr;
     TRestGeant4PhysicsLists* fRestGeant4PhysicsLists = nullptr;
     TRestGeant4Metadata* fRestGeant4Metadata = nullptr;
-    TRandom fDecayRandomMethod;
 
     int fNumberOfProcessedEvents = 0;
     std::atomic<int> fNumberOfStoredEvents{0};
@@ -88,12 +87,6 @@ class SimulationManager {
     /* Primary generation */
    public:
     void InitializeUserDistributions();
-    inline const TH1D* GetPrimaryEnergyDistribution() const { return &fPrimaryEnergyDistribution; }
-    inline const TH1D* GetPrimaryAngularDistribution() const { return &fPrimaryAngularDistribution; }
-
-   private:
-    TH1D fPrimaryEnergyDistribution;
-    TH1D fPrimaryAngularDistribution;
 };
 
 class OutputManager {

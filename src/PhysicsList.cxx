@@ -338,7 +338,8 @@ void PhysicsList::ConstructProcess() {
               "false") &&
             (fRestPhysicsLists->GetPhysicsListOptionValue("G4RadioactiveDecay", "TritiumDecay", "false") ==
                  "true" ||
-             fSimulationManager->GetRestMetadata()->GetParticleSource()->GetParticleName() == "H3")) {
+             fSimulationManager->GetRestMetadata()->GetGeant4PrimaryGeneratorInfo().fSources.at(0)
+                     .fParticleName == "H3")) {
             // Tritium (H3) fix | https://geant4-forum.web.cern.ch/t/triton-decay-with-rdecay01-example/2616
             G4ParticleDefinition* tritium = G4Triton::Definition();
             tritium->SetPDGStable(false);

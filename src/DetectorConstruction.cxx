@@ -17,14 +17,12 @@
 #include <G4SystemOfUnits.hh>
 #include <G4UniformMagField.hh>
 #include <G4UserLimits.hh>
-#include <Math/GenVector/AxisAngle.h>
 #include <filesystem>
 #include <functional>
 
 #include "SimulationManager.h"
 
 using namespace std;
-using namespace TRestGeant4PrimaryGeneratorTypes;
 
 DetectorConstruction::DetectorConstruction(SimulationManager* simulationManager)
     : fSimulationManager(simulationManager) {
@@ -33,6 +31,35 @@ DetectorConstruction::DetectorConstruction(SimulationManager* simulationManager)
 }
 
 DetectorConstruction::~DetectorConstruction() { delete fGdmlParser; }
+
+namespace {
+
+/// The placement in the world (rotation and translation, world = rotation * local + translation) of
+/// `target`, walking the Geant4 volume tree below `mother`, placed by `motherRotation` and
+/// `motherTranslation`
+bool FindWorldPlacement(const G4VPhysicalVolume* mother, const G4VPhysicalVolume* target,
+                        const G4RotationMatrix& motherRotation, const G4ThreeVector& motherTranslation,
+                        G4RotationMatrix& rotation, G4ThreeVector& translation) {
+    if (mother == target) {
+        rotation = motherRotation;
+        translation = motherTranslation;
+        return true;
+    }
+    const auto* logicalVolume = mother->GetLogicalVolume();
+    for (size_t i = 0; i < logicalVolume->GetNoDaughters(); i++) {
+        const auto* daughter = logicalVolume->GetDaughter(i);
+        const G4RotationMatrix daughterRotation = motherRotation * daughter->GetObjectRotationValue();
+        const G4ThreeVector daughterTranslation =
+            motherRotation * daughter->GetObjectTranslation() + motherTranslation;
+        if (FindWorldPlacement(daughter, target, daughterRotation, daughterTranslation, rotation,
+                               translation)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace
 
 G4VPhysicalVolume* DetectorConstruction::Construct() {
     TRestGeant4Metadata* restG4Metadata = fSimulationManager->GetRestMetadata();
@@ -65,9 +92,11 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
         exit(1);
     }
 
+    // The cosmic generator sphere, if no radius is given, circumscribes the world
     const auto worldSolid = dynamic_cast<G4Box*>(worldVolume->GetLogicalVolume()->GetSolid());
-    restG4Metadata->fGeant4PrimaryGeneratorInfo.fSpatialGeneratorWorldSize = {
-        worldSolid->GetXHalfLength(), worldSolid->GetYHalfLength(), worldSolid->GetZHalfLength()};
+    const G4ThreeVector worldHalfSize = {worldSolid->GetXHalfLength(), worldSolid->GetYHalfLength(),
+                                         worldSolid->GetZHalfLength()};
+    restG4Metadata->GetGeant4PrimaryGeneratorInfo().SetCosmicRadius(worldHalfSize.mag());
 
     restG4Metadata->fGeant4GeometryInfo.InitializeOnDetectorConstruction(gdmlToRead, worldVolume);
     restG4Metadata->SyncActiveVolumesFromMetadata();
@@ -141,99 +170,73 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
     fieldMgr->SetDetectorField(magField);
     fieldMgr->CreateChordFinder(magField);
 
-    const auto& primaryGeneratorInfo = restG4Metadata->GetGeant4PrimaryGeneratorInfo();
-    // Getting generation volume
-    const auto fromVolume = primaryGeneratorInfo.GetSpatialGeneratorFrom();
-    if (fromVolume.empty()) {
-        cout << "Generated from volume: " << primaryGeneratorInfo.GetSpatialGeneratorFrom() << endl;
-    }
-    cout << "Generator type: " << primaryGeneratorInfo.GetSpatialGeneratorType() << endl;
-
-    const auto spatialGeneratorTypeEnum =
-        StringToSpatialGeneratorTypes(primaryGeneratorInfo.GetSpatialGeneratorType());
-
-    if (spatialGeneratorTypeEnum == TRestGeant4PrimaryGeneratorTypes::SpatialGeneratorTypes::VOLUME &&
-        !primaryGeneratorInfo.GetSpatialGeneratorFrom().empty()) {
-        auto generatorGeometryName = primaryGeneratorInfo.GetSpatialGeneratorFrom();
-        G4VPhysicalVolume* gdmlPhysicalVolume = GetPhysicalVolume(generatorGeometryName);
-        if (gdmlPhysicalVolume != nullptr && !geometryInfo.IsValidPhysicalVolume(generatorGeometryName)) {
-            generatorGeometryName =
-                geometryInfo.GetAlternativeNameFromGeant4PhysicalName(gdmlPhysicalVolume->GetName());
-        }
+    auto& primaryGeneratorInfo = restG4Metadata->GetGeant4PrimaryGeneratorInfo();
+    primaryGeneratorInfo.Print();
+    if (primaryGeneratorInfo.IsGdml()) {
+        // The generator volume: a physical volume or a logical one with a single physical volume, with
+        // the Geant4 names (inside an assembly they differ from the GDML/TGeo ones)
+        const auto generatorName = primaryGeneratorInfo.GetGdmlVolume();
+        auto* volumeStore = G4PhysicalVolumeStore::GetInstance();
+        G4VPhysicalVolume* gdmlPhysicalVolume = volumeStore->GetVolume(generatorName, false);
         if (gdmlPhysicalVolume == nullptr) {
-            // perhaps the user selected a logical volume instead
-            auto physicalVolumes =
-                geometryInfo.GetAllPhysicalVolumesFromLogical(generatorGeometryName);
+            const auto physicalVolumes = geometryInfo.GetAllPhysicalVolumesFromLogical(generatorName);
             if (physicalVolumes.size() == 1) {
-                gdmlPhysicalVolume = GetPhysicalVolume(physicalVolumes[0]);
-                cout << "Generator volume '" << primaryGeneratorInfo.GetSpatialGeneratorFrom()
-                     << "' was not found in the geometry. Using the physical volume '" << physicalVolumes[0]
-                     << "' instead, which was obtained from logical volume '"
-                     << primaryGeneratorInfo.GetSpatialGeneratorFrom() << "'" << endl;
-                generatorGeometryName =
-                    geometryInfo.GetAlternativeNameFromGeant4PhysicalName(physicalVolumes[0]);
+                gdmlPhysicalVolume = volumeStore->GetVolume(physicalVolumes[0], false);
+                cout << "Generator volume '" << generatorName
+                     << "' is the logical volume of the physical volume '" << physicalVolumes[0] << "'"
+                     << endl;
+            } else if (physicalVolumes.size() > 1) {
+                cerr << "ERROR: The generator logical volume '" << generatorName << "' has "
+                     << physicalVolumes.size() << " physical volumes, give one of them" << endl;
+                exit(1);
             }
         }
+        // Last, an alternative (REST) name of a physical volume
+        if (gdmlPhysicalVolume == nullptr) gdmlPhysicalVolume = GetPhysicalVolume(generatorName);
         if (gdmlPhysicalVolume == nullptr) {
-            cerr << "ERROR: The generator volume '" << primaryGeneratorInfo.GetSpatialGeneratorFrom()
-                 << "' was not found in the geometry" << endl;
+            cerr << "ERROR: The generator volume '" << generatorName << "' was not found in the geometry"
+                 << endl;
             exit(1);
         }
 
-        ROOT::Math::XYZVector genTranslation =
-            geometryInfo.GetPosition(generatorGeometryName);  // in world coordinates
-        fGeneratorTranslation = {genTranslation.x(), genTranslation.y(), genTranslation.z()};
-        const ROOT::Math::Rotation3D genRotation =
-            geometryInfo.GetRotation(generatorGeometryName);  // in world coordinates
-        ROOT::Math::AxisAngle genAxisAngle(genRotation);
-        const auto axis = genAxisAngle.Axis();
-        const double angle = genAxisAngle.Angle();
-        fGeneratorRotation =
-            G4RotationMatrix(G4ThreeVector(axis.x(), axis.y(), axis.z()), angle);
-        if (spatialGeneratorTypeEnum == TRestGeant4PrimaryGeneratorTypes::SpatialGeneratorTypes::SURFACE ||
-            spatialGeneratorTypeEnum == TRestGeant4PrimaryGeneratorTypes::SpatialGeneratorTypes::VOLUME) {
-            restG4Metadata->fGeant4PrimaryGeneratorInfo.fSpatialGeneratorPosition = {
-                fGeneratorTranslation.x(), fGeneratorTranslation.y(), fGeneratorTranslation.z()};
-            restG4Metadata->fGeant4PrimaryGeneratorInfo.fSpatialGeneratorRotationAxis = {axis.x(), axis.y(),
-                                                                                         axis.z()};
-            restG4Metadata->fGeant4PrimaryGeneratorInfo.fSpatialGeneratorRotationValue = angle;
+        // Placement in world coordinates, from the Geant4 volume tree (valid for nested volumes and
+        // assemblies, whose physical volumes are not in the TGeo geometry with the Geant4 names)
+        G4RotationMatrix rotation;
+        G4ThreeVector translation;
+        if (!FindWorldPlacement(worldVolume, gdmlPhysicalVolume, G4RotationMatrix(), G4ThreeVector(),
+                                rotation, translation)) {
+            cerr << "ERROR: The generator volume '" << generatorName << "' is not placed in the world"
+                 << endl;
+            exit(1);
         }
+        fGeneratorTranslation = translation;
+        fGeneratorRotation = rotation;
+        G4ThreeVector axis(0, 0, 1);
+        double angle = 0;
+        rotation.getAngleAxis(angle, axis);
+        // Without rotation the axis can be zero
+        if (angle == 0 || axis.mag() == 0) {
+            axis.set(0, 0, 1);
+            angle = 0;
+        }
+        primaryGeneratorInfo.SetGdmlPlacement({translation.x(), translation.y(), translation.z()},
+                                              {axis.x(), axis.y(), axis.z()}, angle);
 
         fGeneratorSolid = gdmlPhysicalVolume->GetLogicalVolume()->GetSolid();
         fGeneratorLogicalVolume = gdmlPhysicalVolume->GetLogicalVolume();
 
-        fBoundBoxXMax = -1.e30;
-        fBoundBoxYMax = -1.e30;
-        fBoundBoxZMax = -1.e30;
-        fBoundBoxXMin = 1.e30;
-        fBoundBoxYMin = 1.e30;
-        fBoundBoxZMin = 1.e30;
-        if (spatialGeneratorTypeEnum == TRestGeant4PrimaryGeneratorTypes::SpatialGeneratorTypes::VOLUME) {
-            cout << "Optimizing REST volume generation (Please wait. This might take "
-                    "few minutes depending on geometry complexity) "
-                 << flush;
-
-            for (int n = 0; n < 100000; n++) {
-                G4ThreeVector point = fGeneratorSolid->GetPointOnSurface();
-
-                if (point.x() > fBoundBoxXMax) fBoundBoxXMax = point.x();
-                if (point.y() > fBoundBoxYMax) fBoundBoxYMax = point.y();
-                if (point.z() > fBoundBoxZMax) fBoundBoxZMax = point.z();
-
-                if (point.x() < fBoundBoxXMin) fBoundBoxXMin = point.x();
-                if (point.y() < fBoundBoxYMin) fBoundBoxYMin = point.y();
-                if (point.z() < fBoundBoxZMin) fBoundBoxZMin = point.z();
-            }
-
-            fBoundBoxXMin = fBoundBoxXMin * 1.1;
-            fBoundBoxXMax = fBoundBoxXMax * 1.1;
-
-            fBoundBoxYMin = fBoundBoxYMin * 1.1;
-            fBoundBoxYMax = fBoundBoxYMax * 1.1;
-
-            fBoundBoxZMin = fBoundBoxZMin * 1.1;
-            fBoundBoxZMax = fBoundBoxZMax * 1.1;
-        }
+        // Bounding box of the solid (local coordinates) to sample the volume, with a small margin
+        G4ThreeVector boxMin, boxMax;
+        fGeneratorSolid->BoundingLimits(boxMin, boxMax);
+        const G4ThreeVector margin = 0.01 * (boxMax - boxMin);
+        boxMin -= margin;
+        boxMax += margin;
+        fBoundBoxXMin = boxMin.x();
+        fBoundBoxYMin = boxMin.y();
+        fBoundBoxZMin = boxMin.z();
+        fBoundBoxXMax = boxMax.x();
+        fBoundBoxYMax = boxMax.y();
+        fBoundBoxZMax = boxMax.z();
     }
 
     for (unsigned int id = 0; id < restG4Metadata->GetNumberOfActiveVolumes(); id++) {
@@ -363,9 +366,11 @@ bool DetectorConstruction::IsPointInsideAnyDaughterVolume(const G4LogicalVolume*
 
         // localPoint will be the point in the daughter volume reference system
         // which is the one used by the solid to determine if the point is inside or not
+        // GetRotation is the frame rotation (the inverse of the object one), which takes the point from
+        // the mother frame to the daughter one
         G4ThreeVector localPoint = point - daughter->GetTranslation();
         if (daughter->GetRotation()) {
-            localPoint = daughter->GetRotation()->inverse() * localPoint;
+            localPoint = (*daughter->GetRotation()) * localPoint;
         }
 
         if (daughterSolid->Inside(localPoint) == kInside) {
