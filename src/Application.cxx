@@ -318,6 +318,7 @@ void Application::Run(const CommandLineOptions::Options& options) {
     }
     std::cout<<"G4Manager found "<<std::endl;
     auto* g4Manager = new TRestGeant4Manager(findNode.first, findNode.second);
+    g4Manager->CheckConfig();
     g4Manager->PrintMetadata();
 
     auto metadata = g4Manager->fG4Metadata;
@@ -544,8 +545,8 @@ void Application::Run(const CommandLineOptions::Options& options) {
     const auto nEventsAtEnd =
         metadata->GetNumberOfEvents();  // This could be different from original if exit early
 
-    // Do some checks
-    ValidateOutputFile(filename);
+    // Do some checks (not without output: /dev/null)
+    if (!run->HasNullOutput()) ValidateOutputFile(filename);
 
     cout << "\n\t- Total simulation time is " << TRestTools::ToTimeStringLong(fSimulationManager.GetElapsedTime()) << ", "
          << nEventsAtEnd << " processed events ("
@@ -553,6 +554,10 @@ void Application::Run(const CommandLineOptions::Options& options) {
          << " events saved to output file (" << double(nEntries) / fSimulationManager.GetElapsedTime()
          << " per second)" << endl;
     cout << "\t- Output file: " << filename << endl << endl;
+    if (run->HasNullOutput()) {
+        RESTError << "restG4: no outputFileName in the TRestRun (nor --output), nothing has been saved"
+                  << RESTendl;
+    }
 }
 
 void Application::ValidateOutputFile(const string& filename) {
