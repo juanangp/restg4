@@ -2,7 +2,6 @@
 #include "EventAction.h"
 
 #include <TRestGeant4Metadata.h>
-
 #include <TRestRun.h>
 
 #include <G4Event.hh>

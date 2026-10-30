@@ -1,8 +1,7 @@
 
-#include <TRestGeant4Metadata.h>
-
 #include "RunAction.h"
 
+#include <TRestGeant4Metadata.h>
 #include <TRestRun.h>
 
 #include <G4RunManager.hh>
@@ -28,7 +27,8 @@ void RunAction::BeginOfRunAction(const G4Run*) {
         }
         if (fSimulationManager->GetRestMetadata()->GetSimulationMaxTimeSeconds() > 0) {
             G4cout << "Maximum simulation time: "
-                   << TRestTools::ToTimeStringLong(fSimulationManager->GetRestMetadata()->GetSimulationMaxTimeSeconds())
+                   << TRestTools::ToTimeStringLong(
+                          fSimulationManager->GetRestMetadata()->GetSimulationMaxTimeSeconds())
                    << G4endl;
         }
         G4cout << "=======================================================================" << G4endl;

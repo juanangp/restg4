@@ -4,12 +4,12 @@ g4Manager:
   run:
     class: "TRestRun"
     mainDataPath: ""
-    verboseLevel: "info"
+    verbose: "info"
     experimentName: "Fluorescence"
     runType: "simulation"
-    runNumber: "1"
+    runNumber: "10"
     runTag: "Electron"
-    outputFileName: "Run[fRunNumber]_[fRunTag]_[fExperimentName].root"
+    outputFileName: "Run[runNumber]_[runTag]_[experimentName].root"
     runDescription: ""
     runUser: "${ENV:USER}"
 

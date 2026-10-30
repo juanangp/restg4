@@ -1,14 +1,13 @@
 
 #include "DetectorConstruction.h"
 
-#include <TRestGeant4Metadata.h>
-#include <G4GDMLParser.hh>
-
 #include <SensitiveDetector.h>
 #include <TGeoManager.h>
 #include <TRestGeant4GeometryInfo.h>
+#include <TRestGeant4Metadata.h>
 
 #include <G4FieldManager.hh>
+#include <G4GDMLParser.hh>
 #include <G4Isotope.hh>
 #include <G4LogicalVolumeStore.hh>
 #include <G4MagneticField.hh>
@@ -144,20 +143,20 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
     filesystem::current_path(startingPath);
 
     auto sensitiveVolumes = restG4Metadata->GetSensitiveVolumes();
-    for(const auto &sensitiveVolume : sensitiveVolumes){
-    G4VPhysicalVolume* sensitivePhysicalVolume = GetPhysicalVolume(sensitiveVolume);
-      if (sensitivePhysicalVolume == nullptr) {
-        // sensitive volume was not found, perhaps the user specified a logical volume
-        cerr << "ERROR: Sensitive volume '" << sensitiveVolume << "' not found" << endl;
-        exit(1);
-      } else {
-        G4LogicalVolume* volume = sensitivePhysicalVolume->GetLogicalVolume();
-        G4Material* material = volume->GetMaterial();
-        G4cout << "Sensitive volume "<< sensitiveVolume <<" properties:" << G4endl;
-        G4cout << "\t- Material: " << material->GetName() << G4endl;
-        G4cout << "\t- Temperature: " << material->GetTemperature() << " K" << G4endl;
-        G4cout << "\t- Density: " << material->GetDensity() / (g / cm3) << " g/cm3" << G4endl;
-      }
+    for (const auto& sensitiveVolume : sensitiveVolumes) {
+        G4VPhysicalVolume* sensitivePhysicalVolume = GetPhysicalVolume(sensitiveVolume);
+        if (sensitivePhysicalVolume == nullptr) {
+            // sensitive volume was not found, perhaps the user specified a logical volume
+            cerr << "ERROR: Sensitive volume '" << sensitiveVolume << "' not found" << endl;
+            exit(1);
+        } else {
+            G4LogicalVolume* volume = sensitivePhysicalVolume->GetLogicalVolume();
+            G4Material* material = volume->GetMaterial();
+            G4cout << "Sensitive volume " << sensitiveVolume << " properties:" << G4endl;
+            G4cout << "\t- Material: " << material->GetName() << G4endl;
+            G4cout << "\t- Temperature: " << material->GetTemperature() << " K" << G4endl;
+            G4cout << "\t- Density: " << material->GetDensity() / (g / cm3) << " g/cm3" << G4endl;
+        }
     }
 
     Double_t mx = restG4Metadata->GetMagneticField().X() * tesla;
@@ -278,7 +277,8 @@ G4VPhysicalVolume* DetectorConstruction::GetPhysicalVolume(const G4String& physi
     TRestGeant4Metadata* restG4Metadata = fSimulationManager->GetRestMetadata();
     const auto& geometryInfo = restG4Metadata->GetGeant4GeometryInfo();
 
-    std::string geant4PhysicalName = geometryInfo.GetGeant4PhysicalNameFromAlternativeName(physicalVolumeName);
+    std::string geant4PhysicalName =
+        geometryInfo.GetGeant4PhysicalNameFromAlternativeName(physicalVolumeName);
 
     for (auto* physicalVolume : *physicalVolumeStore) {
         if (physicalVolume && physicalVolume->GetName() == geant4PhysicalName) {
@@ -307,8 +307,8 @@ void DetectorConstruction::ConstructSDandField() {
             G4PhysicalVolumeStore::GetInstance()->GetVolume(userSensitiveVolume, false);
         if (physicalVolume == nullptr) {
             const G4String geant4VolumeName =
-                metadata.GetGeant4GeometryInfo()
-                    .GetGeant4PhysicalNameFromAlternativeName(userSensitiveVolume);
+                metadata.GetGeant4GeometryInfo().GetGeant4PhysicalNameFromAlternativeName(
+                    userSensitiveVolume);
             // Check if user selected a Geant4 physical volume by REST name (only relevant for assemblies)
             physicalVolume = G4PhysicalVolumeStore::GetInstance()->GetVolume(geant4VolumeName, false);
         }

@@ -1,9 +1,6 @@
 
 #include "SteppingAction.h"
 
-
-
-
 #include "SimulationManager.h"
 
 using namespace std;

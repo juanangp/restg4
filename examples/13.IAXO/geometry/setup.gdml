@@ -890,7 +890,7 @@
                 <position name="vetoSystemFront.position" x="65.0" z="716.5" unit="mm"/>
             </physvol>
         </assembly>
-        <volume name="world">
+        <volume name="World">
             <physvol name="Chamber">
                 <volumeref ref="Chamber"/>
             </physvol>
@@ -910,6 +910,6 @@
         </volume>
     </structure>
     <setup name="Default" version="1.0">
-        <world ref="world"/>
+        <world ref="World"/>
     </setup>
 </gdml>

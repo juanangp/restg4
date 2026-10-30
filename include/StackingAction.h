@@ -7,7 +7,6 @@
 #include <globals.hh>
 #include <set>
 
-
 class OutputManager;
 class SimulationManager;
 

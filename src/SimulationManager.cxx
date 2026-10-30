@@ -1,16 +1,14 @@
 
-#include <TRestGeant4Event.h>
-
 #include "SimulationManager.h"
 
-#include <G4Event.hh>
-#include <G4RunManager.hh>
-
+#include <TRestGeant4Event.h>
 #include <TRestGeant4Metadata.h>
 #include <TRestGeant4PhysicsLists.h>
 #include <TRestRun.h>
 
+#include <G4Event.hh>
 #include <G4EventManager.hh>
+#include <G4RunManager.hh>
 #include <G4Threading.hh>
 #include <csignal>
 
@@ -21,12 +19,8 @@ thread_local OutputManager* SimulationManager::fOutputManager = nullptr;
 SimulationManager::SimulationManager() {
     // Only master thread should create the SimulationManager
     if (!G4Threading::IsMasterThread()) {
-        G4Exception(
-              "SimulationManager::SimulationManager",
-              "REST_G4_MASTER_THREAD",
-              FatalException,
-              "Only master thread should create the SimulationManager!" 
-            );
+        G4Exception("SimulationManager::SimulationManager", "REST_G4_MASTER_THREAD", FatalException,
+                    "Only master thread should create the SimulationManager!");
     }
 }
 
@@ -84,8 +78,10 @@ void PeriodicPrint(SimulationManager* simulationManager) {
             progress = " | " + to_string(simulationManager->GetNumberOfStoredEvents()) + " entries / " +
                        to_string(restG4Metadata->GetNumberOfRequestedEntries()) + " requested";
         } else if (outputPercentageType == "time") {
-            progress = " | " + TRestTools::ToTimeStringLong(simulationManager->GetElapsedTime()) + " elapsed / " +
-                       TRestTools::ToTimeStringLong(simulationManager->GetRestMetadata()->GetSimulationMaxTimeSeconds());
+            progress = " | " + TRestTools::ToTimeStringLong(simulationManager->GetElapsedTime()) +
+                       " elapsed / " +
+                       TRestTools::ToTimeStringLong(
+                           simulationManager->GetRestMetadata()->GetSimulationMaxTimeSeconds());
         }
 
         string timeInfo;
@@ -107,7 +103,7 @@ static SimulationManager* gCurrentSimulationManager = nullptr;
 
 void interruptSignalHandler(int sig) {
     cout << "\nStopping Run! Program was manually stopped by user (CTRL+C)!" << endl;
-    
+
     if (gCurrentSimulationManager) {
         gCurrentSimulationManager->StopSimulation();
     }
@@ -117,9 +113,9 @@ void SimulationManager::BeginOfRunAction() {
     if (G4Threading::IsMultithreadedApplication() && G4Threading::G4GetThreadId() != -1) {
         return;
     }
-    
+
     gCurrentSimulationManager = this;
-    
+
     std::signal(SIGINT, interruptSignalHandler);
 
     fTimeStartUnix = chrono::steady_clock::now().time_since_epoch().count();
@@ -250,12 +246,8 @@ OutputManager::OutputManager(const SimulationManager* simulationManager)
     : fSimulationManager(const_cast<SimulationManager*>(simulationManager)) {
     // this class should only exist on the threads performing the simulation
     if (G4Threading::IsMasterThread() && G4Threading::IsMultithreadedApplication()) {
-            G4Exception(
-              "OutputManager::OutputManager",
-              "REST_G4_MULTITHREADING",
-              FatalException,
-              "Error in 'OutputManager', this instance should never exist"
-            );
+        G4Exception("OutputManager::OutputManager", "REST_G4_MULTITHREADING", FatalException,
+                    "Error in 'OutputManager', this instance should never exist");
     }
 }
 
@@ -277,7 +269,8 @@ void OutputManager::BeginOfEventAction() {
         fSimulationManager->GetElapsedTime() >
             fSimulationManager->GetRestMetadata()->GetSimulationMaxTimeSeconds()) {
         G4cout << "Stopping Run! We have reached the time limit of "
-               << TRestTools::ToTimeStringLong(fSimulationManager->GetRestMetadata()->GetSimulationMaxTimeSeconds())
+               << TRestTools::ToTimeStringLong(
+                      fSimulationManager->GetRestMetadata()->GetSimulationMaxTimeSeconds())
                << endl;
         fSimulationManager->StopSimulation();
     }
@@ -285,7 +278,7 @@ void OutputManager::BeginOfEventAction() {
 
 void OutputManager::UpdateEvent() {
     auto event = G4EventManager::GetEventManager()->GetConstCurrentEvent();
-    
+
     if (!fEvent) {
         fEvent = make_unique<TRestGeant4Event>(event);
     } else {
@@ -304,14 +297,10 @@ void OutputManager::UpdateEvent() {
     const auto metadata = fSimulationManager->GetRestMetadata();
     if (metadata == nullptr) {
         std::ostringstream errMsg;
-            errMsg << "\n---------------------------------------------------------\n"
+        errMsg << "\n---------------------------------------------------------\n"
                << "TRestGeant4Event: Missing Geant4 metadata for event ID: " << fEvent->GetID();
-            G4Exception(
-              "OutputManager::UpdateEvent",
-              "REST_G4_MISSING_METADATA",
-              FatalException,
-              errMsg.str().c_str() 
-            );
+        G4Exception("OutputManager::UpdateEvent", "REST_G4_MISSING_METADATA", FatalException,
+                    errMsg.str().c_str());
     }
 
     const auto primaryVertex = event->GetPrimaryVertex();
@@ -323,15 +312,12 @@ void OutputManager::UpdateEvent() {
     if (!decay0 && primaryParticles != numberOfSources &&
         int(fEvent->GetNumberOfPrimaries()) != numberOfSources) {
         std::ostringstream errMsg;
-            errMsg << "\n---------------------------------------------------------\n"
-            << "TRestGeant4Event: Number of particles on primary vertex does not match number of sources for event ID: "
-             << fEvent->GetID();
-            G4Exception(
-              "OutputManager::UpdateEvent",
-              "REST_G4_SOURCE_MISTMATCH",
-              FatalException,
-              errMsg.str().c_str() 
-            );
+        errMsg << "\n---------------------------------------------------------\n"
+               << "TRestGeant4Event: Number of particles on primary vertex does not match number of sources "
+                  "for event ID: "
+               << fEvent->GetID();
+        G4Exception("OutputManager::UpdateEvent", "REST_G4_SOURCE_MISTMATCH", FatalException,
+                    errMsg.str().c_str());
     }
 }
 
@@ -357,10 +343,7 @@ bool OutputManager::IsValidEvent() const {
 
 void OutputManager::FinishAndSubmitEvent() {
     if (IsValidEvent()) {
-
-        if (fSimulationManager->GetRestMetadata()->GetRemoveUnwantedTracks())
-            RemoveUnwantedTracks();
-
+        if (fSimulationManager->GetRestMetadata()->GetRemoveUnwantedTracks()) RemoveUnwantedTracks();
 
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> elapsed = end - fEventTimeStart;
@@ -383,8 +366,7 @@ void OutputManager::RecordTrack(const G4Track* track) {
     }
 
     if (fEvent->fInfo.subEventID > 0) {
-        const auto storedTrack =
-            fEvent->GetTrack(fEvent->GetNumberOfTracks() - 1);
+        const auto storedTrack = fEvent->GetTrack(fEvent->GetNumberOfTracks() - 1);
         assert(storedTrack.GetTrackID() == track->GetTrackID());
     }
 }
@@ -398,9 +380,7 @@ void OutputManager::UpdateTrack(const G4Track* track) {
 
 void OutputManager::RecordStep(const G4Step* step) { fEvent->InsertStep(step); }
 
-void OutputManager::AddSensitiveEnergy(Double_t energy) {
-    fEvent->AddEnergyToSensitiveVolume(energy);
-}
+void OutputManager::AddSensitiveEnergy(Double_t energy) { fEvent->AddEnergyToSensitiveVolume(energy); }
 
 void OutputManager::AddEnergyToVolumeForParticleForProcess(Double_t energy, const char* volumeName,
                                                            const char* particleName,

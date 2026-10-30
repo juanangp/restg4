@@ -2,7 +2,6 @@
 #ifndef TrackingAction_h
 #define TrackingAction_h 1
 
-
 #include <G4Track.hh>
 #include <G4UserTrackingAction.hh>
 #include <globals.hh>

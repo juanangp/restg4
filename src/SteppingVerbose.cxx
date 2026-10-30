@@ -6,8 +6,6 @@
 
 #include <SimulationManager.h>
 
-
-
 SteppingVerbose::SteppingVerbose(SimulationManager* simulationManager)
     : G4SteppingVerbose(), fSimulationManager(simulationManager) {}
 SteppingVerbose::~SteppingVerbose() {}

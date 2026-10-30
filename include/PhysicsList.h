@@ -2,11 +2,9 @@
 #ifndef PhysicsList_h
 #define PhysicsList_h 1
 
-
 #include <G4EmConfigurator.hh>
 #include <G4VModularPhysicsList.hh>
 #include <globals.hh>
-
 
 class SimulationManager;
 class TRestGeant4PhysicsLists;

@@ -2,10 +2,9 @@
 #ifndef DetectorConstruction_h
 #define DetectorConstruction_h 1
 
-
-#include <G4PhysicalVolumeStore.hh>
 #include <Rtypes.h>
 
+#include <G4PhysicalVolumeStore.hh>
 #include <G4VSolid.hh>
 #include <G4VUserDetectorConstruction.hh>
 

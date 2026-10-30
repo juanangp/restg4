@@ -2,8 +2,6 @@
 
 #include "TrackingAction.h"
 
-
-
 #include "SimulationManager.h"
 
 using namespace std;

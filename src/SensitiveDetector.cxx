@@ -1,7 +1,7 @@
 
-#include <TRestGeant4Metadata.h>
-
 #include "SensitiveDetector.h"
+
+#include <TRestGeant4Metadata.h>
 
 #include <G4Geantino.hh>
 #include <G4Step.hh>

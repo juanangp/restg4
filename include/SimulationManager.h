@@ -2,11 +2,10 @@
 #ifndef REST_SIMULATIONMANAGER_H
 #define REST_SIMULATIONMANAGER_H
 
-#include <TRestGeant4Event.h>
-#include <TRandom.h>
-#include <TRestGeant4Track.h>
-
 #include <TH1D.h>
+#include <TRandom.h>
+#include <TRestGeant4Event.h>
+#include <TRestGeant4Track.h>
 
 #include <atomic>
 #include <mutex>

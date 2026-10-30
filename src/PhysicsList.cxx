@@ -1,11 +1,8 @@
 
-#include <TRestGeant4Metadata.h>
-
 #include "PhysicsList.h"
 
+#include <TRestGeant4Metadata.h>
 #include <TRestGeant4PhysicsLists.h>
-#include "SimulationManager.h"
-
 
 #include <G4DecayPhysics.hh>
 #include <G4EmExtraPhysics.hh>
@@ -30,12 +27,13 @@
 #include <G4UnitsTable.hh>
 #include <G4Version.hh>
 
+#include "SimulationManager.h"
 
 using namespace std;
 
 namespace {
 std::string GetParticleHPOptionValue(const TRestGeant4PhysicsLists* physicsLists, const std::string& option,
-                                 const std::string& defaultValue = "NotDefined") {
+                                     const std::string& defaultValue = "NotDefined") {
     const vector<std::string> hpPhysicsLists = {"G4HadronPhysicsQGSP_BIC_HP", "G4HadronElasticPhysicsHP"};
     for (const auto& physicsListName : hpPhysicsLists) {
         const auto value = physicsLists->GetPhysicsListOptionValue(physicsListName, option, "NotDefined");
@@ -314,8 +312,7 @@ void PhysicsList::ConstructProcess() {
 #else
             photonEvaporation->SetICM(false);
 #endif
-        } else if (fRestPhysicsLists->GetVerboseLevel() >=
-                   TRestLogManager::REST_Verbose_Level::REST_Silent) {
+        } else if (fRestPhysicsLists->GetVerboseLevel() >= TRestLogManager::REST_Verbose_Level::REST_Silent) {
             RESTWarning << "PhysicsList 'G4RadioactiveDecay' option 'ICM' not defined" << RESTendl;
         }
 
@@ -324,8 +321,7 @@ void PhysicsList::ConstructProcess() {
             radioactiveDecay->SetARM(true);
         } else if (fRestPhysicsLists->GetPhysicsListOptionValue("G4RadioactiveDecay", "ARM") == "false") {
             radioactiveDecay->SetARM(false);
-        } else if (fRestPhysicsLists->GetVerboseLevel() >=
-                   TRestLogManager::REST_Verbose_Level::REST_Silent) {
+        } else if (fRestPhysicsLists->GetVerboseLevel() >= TRestLogManager::REST_Verbose_Level::REST_Silent) {
             RESTWarning << "PhysicsList 'G4RadioactiveDecay' option 'ARM' not defined" << RESTendl;
         }
 
@@ -338,7 +334,9 @@ void PhysicsList::ConstructProcess() {
               "false") &&
             (fRestPhysicsLists->GetPhysicsListOptionValue("G4RadioactiveDecay", "TritiumDecay", "false") ==
                  "true" ||
-             fSimulationManager->GetRestMetadata()->GetGeant4PrimaryGeneratorInfo().fSources.at(0)
+             fSimulationManager->GetRestMetadata()
+                     ->GetGeant4PrimaryGeneratorInfo()
+                     .fSources.at(0)
                      .fParticleName == "H3")) {
             // Tritium (H3) fix | https://geant4-forum.web.cern.ch/t/triton-decay-with-rdecay01-example/2616
             G4ParticleDefinition* tritium = G4Triton::Definition();
