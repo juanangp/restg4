@@ -149,6 +149,14 @@ void SimulationManager::EndOfRunAction() {
     }
     GetRestMetadata()->SetNumberOfEvents(fNumberOfProcessedEvents);
 
+    // cry generator: the showers simulated and their exposure, to normalize to a rate
+    auto& generatorInfo = GetRestMetadata()->GetGeant4PrimaryGeneratorInfo();
+    if (generatorInfo.IsCRY()) {
+        generatorInfo.UpdateCRYExposure();
+        G4cout << "CRY showers simulated: " << generatorInfo.GetCRYShowersUsed() << ", exposure "
+               << generatorInfo.GetCRYExposureTime() / 1e6 << " s" << G4endl;
+    }
+
     fOutputManagerContainer.clear();
 }
 
@@ -213,11 +221,13 @@ void SimulationManager::WriteEvents(bool blocking) {
 }
 
 void SimulationManager::InitializeUserDistributions() {
-    if (fRestGeant4Metadata == nullptr || fRestGeant4Metadata->GetNumberOfSources() == 0) {
+    if (fRestGeant4Metadata == nullptr || (fRestGeant4Metadata->GetNumberOfSources() == 0 &&
+                                           !fRestGeant4Metadata->GetGeant4PrimaryGeneratorInfo().IsCRY())) {
         G4Exception("SimulationManager::InitializeUserDistributions", "REST_G4_NO_PARTICLE_SOURCE",
                     FatalException, "No generator or particle sources defined");
     }
-    // Formulas, histograms and Decay0 files, read once and copied by the generator of each thread
+    // Formulas, histograms and Decay0 files, read once and copied by the generator of each thread, and the
+    // cry showers file, shared
     try {
         fRestGeant4Metadata->GetGeant4PrimaryGeneratorInfo().LoadDistributions();
     } catch (const std::exception& error) {
@@ -307,9 +317,10 @@ void OutputManager::UpdateEvent() {
     const int primaryParticles = primaryVertex != nullptr ? primaryVertex->GetNumberOfParticle() : 0;
     const int numberOfSources = metadata->GetNumberOfSources();
 
-    // A Decay0 source gives the particles of its event
-    const bool decay0 = metadata->GetGeant4PrimaryGeneratorInfo().HasDecay0Sources();
-    if (!decay0 && primaryParticles != numberOfSources &&
+    // A Decay0 source and the cry generator give the particles of their event
+    const auto& generatorInfo = metadata->GetGeant4PrimaryGeneratorInfo();
+    const bool variableParticles = generatorInfo.HasDecay0Sources() || generatorInfo.IsCRY();
+    if (!variableParticles && primaryParticles != numberOfSources &&
         int(fEvent->GetNumberOfPrimaries()) != numberOfSources) {
         std::ostringstream errMsg;
         errMsg << "\n---------------------------------------------------------\n"

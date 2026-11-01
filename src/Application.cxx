@@ -431,6 +431,13 @@ void Application::Run(const CommandLineOptions::Options& options) {
 
     fSimulationManager.InitializeUserDistributions();
 
+    // cry generator: at most the showers of the file, the number of events of the progress
+    const int64_t showers = metadata->GetGeant4PrimaryGeneratorInfo().GetCRYShowersInFile();
+    if (showers > 0 && metadata->GetNumberOfEvents() > showers) {
+        cout << "CRY showers file: " << showers << " showers, number of events set to " << showers << endl;
+        metadata->SetNumberOfEvents(showers);
+    }
+
     runManager->SetUserInitialization(new DetectorConstruction(&fSimulationManager));
     runManager->SetUserInitialization(
         new PhysicsList(&fSimulationManager, fSimulationManager.GetRestPhysicsLists()));

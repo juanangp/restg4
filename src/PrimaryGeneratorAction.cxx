@@ -103,6 +103,16 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
                     error.what());
     }
 
+    // cry generator: all the showers of the file were simulated
+    if (particles.empty() && metadata->GetGeant4PrimaryGeneratorInfo().IsCRY()) {
+        if (!fSimulationManager->GetAbortFlag()) {
+            G4cout << "Stopping Run! All the showers of the CRY file were simulated" << G4endl;
+            fSimulationManager->StopSimulation();
+        }
+        event->SetEventAborted();
+        return;
+    }
+
     for (const auto& particle : particles) {
         auto* definition = FindParticle(particle);
         fParticleGun.SetParticleDefinition(definition);
@@ -114,6 +124,7 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
         fParticleGun.SetParticleMomentumDirection({direction.X(), direction.Y(), direction.Z()});
         const auto& origin = particle.GetOrigin();
         fParticleGun.SetParticlePosition(G4ThreeVector(origin.X(), origin.Y(), origin.Z()) * mm);
+        fParticleGun.SetParticleTime(particle.GetTime() * microsecond);
         fParticleGun.GeneratePrimaryVertex(event);
     }
 

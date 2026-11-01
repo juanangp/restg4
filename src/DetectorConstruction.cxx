@@ -16,8 +16,10 @@
 #include <G4SystemOfUnits.hh>
 #include <G4UniformMagField.hh>
 #include <G4UserLimits.hh>
+#include <cmath>
 #include <filesystem>
 #include <functional>
+#include <sstream>
 
 #include "SimulationManager.h"
 
@@ -96,6 +98,22 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
     const G4ThreeVector worldHalfSize = {worldSolid->GetXHalfLength(), worldSolid->GetYHalfLength(),
                                          worldSolid->GetZHalfLength()};
     restG4Metadata->GetGeant4PrimaryGeneratorInfo().SetCosmicRadius(worldHalfSize.mag());
+
+    // The cry generator: the particles start on the CRY square, which must be inside the world
+    for (const auto& corner : restG4Metadata->GetGeant4PrimaryGeneratorInfo().GetCRYPlaneCorners()) {
+        if (abs(corner.X()) >= worldHalfSize.x() || abs(corner.Y()) >= worldHalfSize.y() ||
+            abs(corner.Z()) >= worldHalfSize.z()) {
+            ostringstream message;
+            message << "The CRY square (subBoxLength of the showers file, centered at the generator "
+                       "position) is not inside the world: corner ("
+                    << corner.X() << ", " << corner.Y() << ", " << corner.Z() << ") mm, world half size ("
+                    << worldHalfSize.x() << ", " << worldHalfSize.y() << ", " << worldHalfSize.z()
+                    << ") mm. Make subBoxLength smaller, move the position or enlarge the world";
+            filesystem::current_path(startingPath);
+            G4Exception("DetectorConstruction::Construct", "REST_G4_CRY_OUTSIDE_WORLD", FatalException,
+                        message.str().c_str());
+        }
+    }
 
     restG4Metadata->fGeant4GeometryInfo.InitializeOnDetectorConstruction(gdmlToRead, worldVolume);
     restG4Metadata->SyncActiveVolumesFromMetadata();
