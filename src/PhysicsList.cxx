@@ -26,6 +26,7 @@
 #include <G4UImanager.hh>
 #include <G4UnitsTable.hh>
 #include <G4Version.hh>
+#include <cstdlib>
 
 #include "SimulationManager.h"
 
@@ -206,10 +207,10 @@ void PhysicsList::ApplyParticleHPOptions() const {
     }
 #endif
 
-    const TString verbose = GetParticleHPOptionValue(fRestPhysicsLists, "verbose");
+    const std::string verbose = GetParticleHPOptionValue(fRestPhysicsLists, "verbose");
     if (verbose != "NotDefined") {
         G4cout << "Setting ParticleHP option 'VerboseLevel' to '" << verbose << "'" << G4endl;
-        G4ParticleHPManager::GetInstance()->SetVerboseLevel(verbose.Atoi());
+        G4ParticleHPManager::GetInstance()->SetVerboseLevel(std::atoi(verbose.c_str()));
     }
 }
 

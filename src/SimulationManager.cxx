@@ -70,9 +70,8 @@ void PeriodicPrint(SimulationManager* simulationManager) {
             progress = " | " + to_string(simulationManager->GetNumberOfProcessedEvents()) +
                        " events processed / " + to_string(restG4Metadata->GetNumberOfEvents()) +
                        " requested (" +
-                       TString::Format("%.2e", simulationManager->GetNumberOfProcessedEvents() /
-                                                   simulationManager->GetElapsedTime())
-                           .Data() +
+                       TRestTools::Format("%.2e", simulationManager->GetNumberOfProcessedEvents() /
+                                                      simulationManager->GetElapsedTime()) +
                        "/s)";
         } else if (outputPercentageType == "entries") {
             progress = " | " + to_string(simulationManager->GetNumberOfStoredEvents()) + " entries / " +
@@ -89,12 +88,11 @@ void PeriodicPrint(SimulationManager* simulationManager) {
             timeInfo = " | " + TRestTools::ToTimeStringLong(simulationManager->GetElapsedTime()) + " elapsed";
         }
 
-        G4cout << TString::Format("%5.2f", completionPercentage).Data() << "% | "
+        G4cout << TRestTools::Format("%5.2f", completionPercentage) << "% | "
                << simulationManager->GetNumberOfStoredEvents() << " events stored / "
                << simulationManager->GetNumberOfProcessedEvents() << " processed ("
-               << TString::Format("%.2e", simulationManager->GetNumberOfStoredEvents() /
-                                              simulationManager->GetElapsedTime())
-                      .Data()
+               << TRestTools::Format("%.2e", simulationManager->GetNumberOfStoredEvents() /
+                                                 simulationManager->GetElapsedTime())
                << "/s)" << progress << timeInfo << G4endl;
     }
 }
@@ -391,10 +389,9 @@ void OutputManager::UpdateTrack(const G4Track* track) {
 
 void OutputManager::RecordStep(const G4Step* step) { fEvent->InsertStep(step); }
 
-void OutputManager::AddSensitiveEnergy(Double_t energy) { fEvent->AddEnergyToSensitiveVolume(energy); }
+void OutputManager::AddSensitiveEnergy(double energy) { fEvent->AddEnergyToSensitiveVolume(energy); }
 
-void OutputManager::AddEnergyToVolumeForParticleForProcess(Double_t energy, const char* volumeName,
-                                                           const char* particleName,
-                                                           const char* processName) {
-    fEvent->AddEnergyInVolumeForParticleForProcess(energy, volumeName, particleName, processName);
+void OutputManager::AddEnergyToVolumeForParticleForProcess(double energy, int volumeID, int particleID,
+                                                           int processID) {
+    fEvent->AddEnergyInVolumeForParticleForProcess(energy, volumeID, particleID, processID);
 }

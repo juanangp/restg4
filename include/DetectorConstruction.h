@@ -21,7 +21,7 @@ class DetectorConstruction : public G4VUserDetectorConstruction {
     G4ThreeVector fGeneratorTranslation;
     G4RotationMatrix fGeneratorRotation;
 
-    Double_t fBoundBoxXMin, fBoundBoxXMax, fBoundBoxYMin, fBoundBoxYMax, fBoundBoxZMin, fBoundBoxZMax;
+    double fBoundBoxXMin, fBoundBoxXMax, fBoundBoxYMin, fBoundBoxYMax, fBoundBoxZMin, fBoundBoxZMax;
 
    public:
     G4VPhysicalVolume* GetPhysicalVolume(const G4String& physVolName) const;
@@ -31,12 +31,12 @@ class DetectorConstruction : public G4VUserDetectorConstruction {
     inline G4ThreeVector GetGeneratorTranslation() const { return fGeneratorTranslation; }
     inline G4RotationMatrix GetGeneratorRotation() const { return fGeneratorRotation; }
 
-    inline Double_t GetBoundBoxXMin() const { return fBoundBoxXMin; }
-    inline Double_t GetBoundBoxXMax() const { return fBoundBoxXMax; }
-    inline Double_t GetBoundBoxYMin() const { return fBoundBoxYMin; }
-    inline Double_t GetBoundBoxYMax() const { return fBoundBoxYMax; }
-    inline Double_t GetBoundBoxZMin() const { return fBoundBoxZMin; }
-    inline Double_t GetBoundBoxZMax() const { return fBoundBoxZMax; }
+    inline double GetBoundBoxXMin() const { return fBoundBoxXMin; }
+    inline double GetBoundBoxXMax() const { return fBoundBoxXMax; }
+    inline double GetBoundBoxYMin() const { return fBoundBoxYMin; }
+    inline double GetBoundBoxYMax() const { return fBoundBoxYMax; }
+    inline double GetBoundBoxZMin() const { return fBoundBoxZMin; }
+    inline double GetBoundBoxZMax() const { return fBoundBoxZMax; }
 
     DetectorConstruction(SimulationManager*);
     ~DetectorConstruction();

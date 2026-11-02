@@ -2,9 +2,6 @@
 #include "Application.h"
 
 #include <TGeoManager.h>
-#include <TObjArray.h>
-#include <TObjString.h>
-#include <TPRegexp.h>
 #include <TROOT.h>
 #include <TRandom.h>
 #include <TRestGeant4Event.h>
@@ -87,14 +84,13 @@ void PrintOptions(const Options& options) {
          << endl;
 }
 
-int GetSecondsFromTimeExpression(const char* expression) {
+int GetSecondsFromTimeExpression(const string& expression) {
     // expression is of the form "20h", "10m", "30s" etc.
-    TPRegexp timeRegex("^(\\d+)([hms])$$");
-    TObjArray* subStrL = timeRegex.MatchS(expression);
-    const Int_t nrSubStr = subStrL->GetLast() + 1;
-    if (nrSubStr > 2) {
-        const int time = stoi(((TObjString*)subStrL->At(1))->GetString().Data());
-        const TString modifier = ((TObjString*)subStrL->At(2))->GetString();
+    const regex timeRegex("^(\\d+)([hms])$");
+    smatch matches;
+    if (regex_match(expression, matches, timeRegex)) {
+        const int time = stoi(matches[1].str());
+        const string modifier = matches[2].str();
 
         if (modifier == "h") {
             return time * 60 * 60;
@@ -108,16 +104,14 @@ int GetSecondsFromTimeExpression(const char* expression) {
     return 0;
 }
 
-int GetSecondsFromFullTimeExpression(const char* expression) {
+int GetSecondsFromFullTimeExpression(const string& expression) {
     // expression is of the form "1h20m30s", "1h", "20m30s", "10s" etc.
     int seconds = 0;
-    TPRegexp fullTimeRegex("^(\\d+h)?(\\d+m)?(\\d+s)?$");
-    TObjArray* subStrL = fullTimeRegex.MatchS(expression);
-
-    for (int i = 0; i < 3; i++) {
-        auto obj = (TObjString*)subStrL->At(i + 1);
-        if (obj != nullptr) {
-            seconds += GetSecondsFromTimeExpression(obj->GetString().Data());
+    const regex fullTimeRegex("^(\\d+h)?(\\d+m)?(\\d+s)?$");
+    smatch matches;
+    if (regex_match(expression, matches, fullTimeRegex)) {
+        for (int i = 1; i <= 3; i++) {
+            if (matches[i].matched) seconds += GetSecondsFromTimeExpression(matches[i].str());
         }
     }
 
@@ -527,7 +521,7 @@ void Application::Run(const CommandLineOptions::Options& options) {
     delete runManager;
 
     systime = time(nullptr);
-    run->SetEndTimeStamp((Double_t)systime);
+    run->SetEndTimeStamp((double)systime);
     const string filename = TRestTools::GetFullPath(run->GetOutputFileName());
 
     const auto nEntries = run->GetSavedEntries();

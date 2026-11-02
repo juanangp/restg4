@@ -71,8 +71,6 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
     G4cout << "Producing geometry" << G4endl;
 
     // Reading the geometry
-    TString geometryFile = restG4Metadata->GetGdmlFilename();
-
     const auto startingPath = filesystem::current_path();
 
     std::string fullGdmlFilename = std::string(restG4Metadata->GetGdmlFilename());
@@ -177,9 +175,9 @@ G4VPhysicalVolume* DetectorConstruction::Construct() {
         }
     }
 
-    Double_t mx = restG4Metadata->GetMagneticField().X() * tesla;
-    Double_t my = restG4Metadata->GetMagneticField().Y() * tesla;
-    Double_t mz = restG4Metadata->GetMagneticField().Z() * tesla;
+    double mx = restG4Metadata->GetMagneticField().X() * tesla;
+    double my = restG4Metadata->GetMagneticField().Y() * tesla;
+    double mz = restG4Metadata->GetMagneticField().Z() * tesla;
 
     G4MagneticField* magField = new G4UniformMagField(G4ThreeVector(mx, my, mz));
     // G4FieldManager* localFieldMgr = new G4FieldManager(magField);

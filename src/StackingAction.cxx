@@ -74,7 +74,7 @@ void StackingAction::NewStage() {
 
     const auto outputManager = SimulationManager::GetOutputManager();
 
-    const Int_t subEventID = outputManager->fEvent->GetSubID();
+    const int subEventID = outputManager->fEvent->GetSubID();
     outputManager->FinishAndSubmitEvent();
     outputManager->fEvent->SetSubID(subEventID + 1);
 }

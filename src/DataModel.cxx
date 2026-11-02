@@ -17,29 +17,9 @@ TRestGeant4Event::TRestGeant4Event(const G4Event* event) : TRestGeant4Event() {
     SetOK(true);
 
     time_t system_time = time(nullptr);
-    SetTime((Double_t)system_time);
+    SetTime((double)system_time);
 
-    auto primaryVertex = event->GetPrimaryVertex();
-    if (!primaryVertex) return;
-
-    const auto& position = primaryVertex->GetPosition();
-
-    fEventData.primaryPosition = {position.x() / CLHEP::mm, position.y() / CLHEP::mm,
-                                  position.z() / CLHEP::mm};
-
-    for (int i = 0; i < primaryVertex->GetNumberOfParticle(); ++i) {
-        const auto* primaryParticle = primaryVertex->GetPrimary(i);
-        if (!primaryParticle || !primaryParticle->GetParticleDefinition()) continue;
-
-        fEventData.primaryParticleNames.emplace_back(
-            primaryParticle->GetParticleDefinition()->GetParticleName());
-
-        fEventData.primaryEnergies.emplace_back(primaryParticle->GetKineticEnergy() / CLHEP::keV);
-
-        const auto& momentum = primaryParticle->GetMomentumDirection();
-
-        fEventData.primaryDirections.emplace_back(momentum.x(), momentum.y(), momentum.z());
-    }
+    UpdatePrimaryData(event);
 }
 
 void TRestGeant4Event::UpdatePrimaryData(const G4Event* event) {
@@ -48,28 +28,37 @@ void TRestGeant4Event::UpdatePrimaryData(const G4Event* event) {
     auto* primaryVertex = event->GetPrimaryVertex();
     if (!primaryVertex) return;
 
-    fEventData.primaryParticleNames.clear();
-    fEventData.primaryEnergies.clear();
-    fEventData.primaryDirections.clear();
+    auto& d = fEventData;
+    d.primaryParticleIDs.clear();
+    d.primaryEnergies.clear();
+    d.primaryDirectionX.clear();
+    d.primaryDirectionY.clear();
+    d.primaryDirectionZ.clear();
 
     const auto& position = primaryVertex->GetPosition();
+    d.primaryPositionX = position.x() / CLHEP::mm;
+    d.primaryPositionY = position.y() / CLHEP::mm;
+    d.primaryPositionZ = position.z() / CLHEP::mm;
 
-    fEventData.primaryPosition = {position.x() / CLHEP::mm, position.y() / CLHEP::mm,
-                                  position.z() / CLHEP::mm};
-
+    const auto* metadata = GetGeant4Metadata();
     for (int i = 0; i < primaryVertex->GetNumberOfParticle(); ++i) {
         const auto* primaryParticle = primaryVertex->GetPrimary(i);
 
         if (!primaryParticle || !primaryParticle->GetParticleDefinition()) continue;
 
-        fEventData.primaryParticleNames.emplace_back(
-            primaryParticle->GetParticleDefinition()->GetParticleName());
+        const auto* definition = primaryParticle->GetParticleDefinition();
+        d.primaryParticleIDs.push_back(definition->GetPDGEncoding());
+        if (metadata) {
+            metadata->fGeant4PhysicsInfo.InsertParticleName(definition->GetPDGEncoding(),
+                                                            definition->GetParticleName());
+        }
 
-        fEventData.primaryEnergies.emplace_back(primaryParticle->GetKineticEnergy() / CLHEP::keV);
+        d.primaryEnergies.emplace_back(primaryParticle->GetKineticEnergy() / CLHEP::keV);
 
         const auto& direction = primaryParticle->GetMomentumDirection();
-
-        fEventData.primaryDirections.emplace_back(direction.x(), direction.y(), direction.z());
+        d.primaryDirectionX.push_back(direction.x());
+        d.primaryDirectionY.push_back(direction.y());
+        d.primaryDirectionZ.push_back(direction.z());
     }
 }
 
@@ -85,18 +74,19 @@ bool TRestGeant4Event::InsertTrack(const G4Track* track) {
 
     if ((isTracksEmpty && IsSubEvent()) ||
         (isTracksEmpty && !IsSubEvent() && GetGeant4Metadata()->GetNumberOfSources() == 1)) {
-        fEventData.subEventParticleName = track->GetParticleDefinition()->GetParticleName();
+        fEventData.subEventParticleID = track->GetParticleDefinition()->GetPDGEncoding();
 
         fEventData.subEventEnergy = track->GetKineticEnergy() / CLHEP::keV;
 
         const auto& position = track->GetPosition();
-
-        fEventData.subEventPosition = {position.x() / CLHEP::mm, position.y() / CLHEP::mm,
-                                       position.z() / CLHEP::mm};
+        fEventData.subEventPositionX = position.x() / CLHEP::mm;
+        fEventData.subEventPositionY = position.y() / CLHEP::mm;
+        fEventData.subEventPositionZ = position.z() / CLHEP::mm;
 
         const auto& momentum = track->GetMomentumDirection();
-
-        fEventData.subEventDirection = {momentum.x(), momentum.y(), momentum.z()};
+        fEventData.subEventDirectionX = momentum.x();
+        fEventData.subEventDirectionY = momentum.y();
+        fEventData.subEventDirectionZ = momentum.z();
     }
 
     const std::size_t currentTrackIndex = fEventData.trackIDs.size();
@@ -110,13 +100,23 @@ bool TRestGeant4Event::InsertTrack(const G4Track* track) {
     fEventData.trackIDs.push_back(track->GetTrackID());
     fEventData.parentIDs.push_back(track->GetParentID());
 
-    fEventData.trackParticleNames.push_back(track->GetParticleDefinition()->GetParticleName());
+    // The particle (inserted by the initial step) and the creator process, inserted here: it may be a
+    // process of a step that was not stored (parent outside the active volumes)
+    fEventData.trackParticleIDs.push_back(track->GetParticleDefinition()->GetPDGEncoding());
 
-    if (track->GetCreatorProcess() != nullptr) {
-        fEventData.trackCreatorProcesses.push_back(track->GetCreatorProcess()->GetProcessName());
-    } else {
-        fEventData.trackCreatorProcesses.push_back("PrimaryGenerator");
+    const auto* creator = track->GetCreatorProcess();
+    const int creatorID = creator ? TRestGeant4PhysicsInfo::GetProcessIDFromGeant4Process(creator)
+                                  : TRestGeant4PhysicsInfo::kPrimaryGeneratorProcessID;
+    if (const auto* metadata = GetGeant4Metadata()) {
+        if (creator) {
+            metadata->fGeant4PhysicsInfo.InsertProcessName(
+                creatorID, creator->GetProcessName(),
+                G4VProcess::GetProcessTypeName(creator->GetProcessType()));
+        } else {
+            metadata->fGeant4PhysicsInfo.InsertProcessName(creatorID, "PrimaryGenerator", "REST-for-physics");
+        }
     }
+    fEventData.trackCreatorProcessIDs.push_back(creatorID);
 
     fEventData.trackDepositedEnergy.push_back(0.0);
 
@@ -134,7 +134,9 @@ bool TRestGeant4Event::InsertTrack(const G4Track* track) {
 
     const G4ThreeVector& trackOrigin = track->GetPosition();
 
-    fEventData.trackInitialPositions.push_back({trackOrigin.x(), trackOrigin.y(), trackOrigin.z()});
+    fEventData.trackInitialPositionX.push_back(trackOrigin.x() / CLHEP::mm);
+    fEventData.trackInitialPositionY.push_back(trackOrigin.y() / CLHEP::mm);
+    fEventData.trackInitialPositionZ.push_back(trackOrigin.z() / CLHEP::mm);
 
     fEventData.trackSecondariesIndices.push_back(fEventData.trackSecondariesIDs.size());
 
@@ -260,7 +262,7 @@ void TRestGeant4Event::InsertStep(const G4Step* step) {
 
     G4String processName = "Init";
     G4String processTypeName = "Init";
-    Int_t processID = 0;
+    int processID = 0;
 
     if (!isInitialStep && process != nullptr) {
         processName = process->GetProcessName();
@@ -273,7 +275,7 @@ void TRestGeant4Event::InsertStep(const G4Step* step) {
     if (kill) {
         processName = "REST-for-physics-kill";
         processTypeName = "REST-for-physics";
-        processID = 1000000;
+        processID = TRestGeant4PhysicsInfo::kKillProcessID;
         energy = 0;
 
         const_cast<G4Track*>(track)->SetTrackStatus(fStopAndKill);
@@ -283,15 +285,15 @@ void TRestGeant4Event::InsertStep(const G4Step* step) {
 
     const G4ThreeVector& position = track->GetPosition();
 
-    const Double_t x = position.x() / CLHEP::mm;
-    const Double_t y = position.y() / CLHEP::mm;
-    const Double_t z = position.z() / CLHEP::mm;
+    const double x = position.x() / CLHEP::mm;
+    const double y = position.y() / CLHEP::mm;
+    const double z = position.z() / CLHEP::mm;
 
-    const Double_t hitGlobalTime = track->GetGlobalTime() / CLHEP::microsecond;
+    const double hitGlobalTime = track->GetGlobalTime() / CLHEP::microsecond;
 
     const G4ThreeVector& momentum = track->GetMomentumDirection();
 
-    const Int_t volumeID = geometryInfo.GetIDFromVolume(volumeName);
+    const int volumeID = geometryInfo.GetIDFromVolume(volumeName);
 
     fEventData.hitsStorage.x.push_back(x);
     fEventData.hitsStorage.y.push_back(y);
@@ -310,7 +312,6 @@ void TRestGeant4Event::InsertStep(const G4Step* step) {
     fEventData.hitMomentumDirectionZ.push_back(momentum.z());
 
     if (metadata->GetStoreHadronicTargetInfo()) {
-        string isotopeName = "";
         int atomicNumber = 0;
         int atomicMassNumber = 0;
 
@@ -324,14 +325,11 @@ void TRestGeant4Event::InsertStep(const G4Step* step) {
                 auto isotope = targetNucleus->GetIsotope();
 
                 if (isotope) {
-                    isotopeName = isotope->GetName();
                     atomicNumber = isotope->GetZ();
                     atomicMassNumber = isotope->GetN();
                 }
             }
         }
-
-        fEventData.hitHadronicTargetIsotopeName.push_back(isotopeName);
 
         fEventData.hitHadronicTargetIsotopeZ.push_back(atomicNumber);
 
@@ -351,15 +349,15 @@ void TRestGeant4Event::InsertStep(const G4Step* step) {
         }
     }
 
-    SimulationManager::GetOutputManager()->AddEnergyToVolumeForParticleForProcess(
-        energy, volumeName.c_str(), particleName.c_str(), processName.c_str());
+    SimulationManager::GetOutputManager()->AddEnergyToVolumeForParticleForProcess(energy, volumeID,
+                                                                                  particleID, processID);
 }
 
 bool OutputManager::IsValidTrack(const G4Track*) const { return true; }
 
 bool OutputManager::IsValidStep(const G4Step*) const { return true; }
 
-Int_t TRestGeant4PhysicsInfo::GetProcessIDFromGeant4Process(const G4VProcess* process) {
+int TRestGeant4PhysicsInfo::GetProcessIDFromGeant4Process(const G4VProcess* process) {
     if (!process) return 0;
 
     return process->GetProcessType() * 1000 + process->GetProcessSubType();
@@ -423,9 +421,9 @@ void OutputManager::RemoveUnwantedTracks() {
 
             eventData.parentIDs.erase(eventData.parentIDs.begin() + i);
 
-            eventData.trackParticleNames.erase(eventData.trackParticleNames.begin() + i);
+            eventData.trackParticleIDs.erase(eventData.trackParticleIDs.begin() + i);
 
-            eventData.trackCreatorProcesses.erase(eventData.trackCreatorProcesses.begin() + i);
+            eventData.trackCreatorProcessIDs.erase(eventData.trackCreatorProcessIDs.begin() + i);
 
             eventData.trackDepositedEnergy.erase(eventData.trackDepositedEnergy.begin() + i);
 
@@ -445,7 +443,11 @@ void OutputManager::RemoveUnwantedTracks() {
 
             eventData.trackWeights.erase(eventData.trackWeights.begin() + i);
 
-            eventData.trackInitialPositions.erase(eventData.trackInitialPositions.begin() + i);
+            eventData.trackInitialPositionX.erase(eventData.trackInitialPositionX.begin() + i);
+
+            eventData.trackInitialPositionY.erase(eventData.trackInitialPositionY.begin() + i);
+
+            eventData.trackInitialPositionZ.erase(eventData.trackInitialPositionZ.begin() + i);
 
             eventData.trackSecondariesIndices.erase(eventData.trackSecondariesIndices.begin() + i);
 

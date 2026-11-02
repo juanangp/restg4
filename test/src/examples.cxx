@@ -3,6 +3,7 @@
 #include <TGeoManager.h>
 #include <TROOT.h>
 #include <TRestRun.h>
+#include <TRestTools.h>
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -37,11 +38,11 @@ TEST(restG4, Example_01_NLDBD) {
     }
 
     {  // Run validation macro
-        const TString macro(thisExamplePath / "Validate.C");
-        gROOT->ProcessLine(TString::Format(".L %s", macro.Data()));  // Load macro
+        const std::string macro = (thisExamplePath / "Validate.C").string();
+        gROOT->ProcessLine(TRestTools::Format(".L %s", macro.c_str()).c_str());  // Load macro
         int error = 0;
-        const int result =
-            gROOT->ProcessLine(TString::Format("Validate(\"%s\")", options.outputFile.c_str()), &error);
+        const int result = gROOT->ProcessLine(
+            TRestTools::Format("Validate(\"%s\")", options.outputFile.c_str()).c_str(), &error);
         EXPECT_EQ(error, 0);
         EXPECT_EQ(result, 0);
     }
@@ -152,11 +153,12 @@ TEST(restG4, Example_04_Muons) {
     app.Run(options);
 
     // Run validation macro
-    const TString macro(thisExamplePath / "ValidateCosmicMuonsFromWall.C");
-    gROOT->ProcessLine(TString::Format(".L %s", macro.Data()));  // Load macro
+    const std::string macro = (thisExamplePath / "ValidateCosmicMuonsFromWall.C").string();
+    gROOT->ProcessLine(TRestTools::Format(".L %s", macro.c_str()).c_str());  // Load macro
     int error = 0;
     const int result = gROOT->ProcessLine(
-        TString::Format("ValidateCosmicMuonsFromWall(\"%s\")", options.outputFile.c_str()), &error);
+        TRestTools::Format("ValidateCosmicMuonsFromWall(\"%s\")", options.outputFile.c_str()).c_str(),
+        &error);
     EXPECT_EQ(error, 0);
     EXPECT_EQ(result, 0);
 
@@ -183,11 +185,12 @@ TEST(restG4, Example_04_Muons_MT) {
     app.Run(options);
 
     // Run validation macro
-    const TString macro(thisExamplePath / "ValidateCosmicMuonsFromWall.C");
-    gROOT->ProcessLine(TString::Format(".L %s", macro.Data()));  // Load macro
+    const std::string macro = (thisExamplePath / "ValidateCosmicMuonsFromWall.C").string();
+    gROOT->ProcessLine(TRestTools::Format(".L %s", macro.c_str()).c_str());  // Load macro
     int error = 0;
     const int result = gROOT->ProcessLine(
-        TString::Format("ValidateCosmicMuonsFromWall(\"%s\")", options.outputFile.c_str()), &error);
+        TRestTools::Format("ValidateCosmicMuonsFromWall(\"%s\")", options.outputFile.c_str()).c_str(),
+        &error);
     EXPECT_EQ(error, 0);
     EXPECT_EQ(result, 0);
 
@@ -212,11 +215,11 @@ TEST(restG4, Example_05_PandaX) {
     app.Run(options);
 
     // Run validation macro
-    const TString macro(thisExamplePath / "Validate.C");
-    gROOT->ProcessLine(TString::Format(".L %s", macro.Data()));  // Load macro
+    const std::string macro = (thisExamplePath / "Validate.C").string();
+    gROOT->ProcessLine(TRestTools::Format(".L %s", macro.c_str()).c_str());  // Load macro
     int error = 0;
-    const int result =
-        gROOT->ProcessLine(TString::Format("Validate(\"%s\")", options.outputFile.c_str()), &error);
+    const int result = gROOT->ProcessLine(
+        TRestTools::Format("Validate(\"%s\")", options.outputFile.c_str()).c_str(), &error);
     EXPECT_EQ(error, 0);
     EXPECT_EQ(result, 0);
 
@@ -237,11 +240,11 @@ TEST(restG4, Example_06_IonRecoils) {
     app.Run(options);
 
     // Run validation macro
-    const TString macro(thisExamplePath / "Validate.C");
-    gROOT->ProcessLine(TString::Format(".L %s", macro.Data()));  // Load macro
+    const std::string macro = (thisExamplePath / "Validate.C").string();
+    gROOT->ProcessLine(TRestTools::Format(".L %s", macro.c_str()).c_str());  // Load macro
     int error = 0;
-    const int result =
-        gROOT->ProcessLine(TString::Format("Validate(\"%s\")", options.outputFile.c_str()), &error);
+    const int result = gROOT->ProcessLine(
+        TRestTools::Format("Validate(\"%s\")", options.outputFile.c_str()).c_str(), &error);
     EXPECT_EQ(error, 0);
     EXPECT_EQ(result, 0);
 
@@ -272,11 +275,11 @@ TEST(restG4, Example_07_Decay_FullChain) {
     physicsInfo.Print();
 
     // Run validation macro
-    const TString macro(thisExamplePath / "Validate.C");
-    gROOT->ProcessLine(TString::Format(".L %s", macro.Data()));  // Load macro
+    const std::string macro = (thisExamplePath / "Validate.C").string();
+    gROOT->ProcessLine(TRestTools::Format(".L %s", macro.c_str()).c_str());  // Load macro
     int error = 0;
-    const int result =
-        gROOT->ProcessLine(TString::Format("Validate(\"%s\", %d)", options.outputFile.c_str(), 16), &error);
+    const int result = gROOT->ProcessLine(
+        TRestTools::Format("Validate(\"%s\", %d)", options.outputFile.c_str(), 16).c_str(), &error);
     EXPECT_EQ(error, 0);
     EXPECT_EQ(result, 0);
 
@@ -300,11 +303,11 @@ TEST(restG4, Example_09_Pb210_Shield) {
     TRestRun run(options.outputFile.c_str());
 
     // Run validation macro
-    const TString macro(thisExamplePath / "Validate.C");
-    gROOT->ProcessLine(TString::Format(".L %s", macro.Data()));  // Load macro
+    const std::string macro = (thisExamplePath / "Validate.C").string();
+    gROOT->ProcessLine(TRestTools::Format(".L %s", macro.c_str()).c_str());  // Load macro
     int error = 0;
-    const int result =
-        gROOT->ProcessLine(TString::Format("Validate(\"%s\")", options.outputFile.c_str()), &error);
+    const int result = gROOT->ProcessLine(
+        TRestTools::Format("Validate(\"%s\")", options.outputFile.c_str()).c_str(), &error);
     EXPECT_EQ(error, 0);
     EXPECT_EQ(result, 0);
 
@@ -327,11 +330,11 @@ TEST(restG4, Example_10_Geometry) {
     TRestRun run(options.outputFile);
 
     // Run validation macro
-    const TString macro(thisExamplePath / "Validate.C");
-    gROOT->ProcessLine(TString::Format(".L %s", macro.Data()));  // Load macro
+    const std::string macro = (thisExamplePath / "Validate.C").string();
+    gROOT->ProcessLine(TRestTools::Format(".L %s", macro.c_str()).c_str());  // Load macro
     int error = 0;
-    const int result =
-        gROOT->ProcessLine(TString::Format("Validate(\"%s\")", options.outputFile.c_str()), &error);
+    const int result = gROOT->ProcessLine(
+        TRestTools::Format("Validate(\"%s\")", options.outputFile.c_str()).c_str(), &error);
     EXPECT_EQ(error, 0);
     EXPECT_EQ(result, 0);
 
@@ -354,11 +357,11 @@ TEST(restG4, Example_12_Generators_CosineSquared) {
     TRestRun run(options.outputFile);
 
     // Run validation macro
-    const TString macro(thisExamplePath / "ValidateCosineSquared.C");
-    gROOT->ProcessLine(TString::Format(".L %s", macro.Data()));  // Load macro
+    const std::string macro = (thisExamplePath / "ValidateCosineSquared.C").string();
+    gROOT->ProcessLine(TRestTools::Format(".L %s", macro.c_str()).c_str());  // Load macro
     int error = 0;
     const int result = gROOT->ProcessLine(
-        TString::Format("ValidateCosineSquared(\"%s\")", options.outputFile.c_str()), &error);
+        TRestTools::Format("ValidateCosineSquared(\"%s\")", options.outputFile.c_str()).c_str(), &error);
     EXPECT_EQ(error, 0);
     EXPECT_EQ(result, 0);
 
@@ -381,11 +384,12 @@ TEST(restG4, Example_12_Generators_EnergyAndAngularRange) {
     TRestRun run(options.outputFile);
 
     // Run validation macro
-    const TString macro(thisExamplePath / "ValidateEnergyAndAngularRange.C");
-    gROOT->ProcessLine(TString::Format(".L %s", macro.Data()));  // Load macro
+    const std::string macro = (thisExamplePath / "ValidateEnergyAndAngularRange.C").string();
+    gROOT->ProcessLine(TRestTools::Format(".L %s", macro.c_str()).c_str());  // Load macro
     int error = 0;
     const int result = gROOT->ProcessLine(
-        TString::Format("ValidateEnergyAndAngularRange(\"%s\")", options.outputFile.c_str()), &error);
+        TRestTools::Format("ValidateEnergyAndAngularRange(\"%s\")", options.outputFile.c_str()).c_str(),
+        &error);
     EXPECT_EQ(error, 0);
     EXPECT_EQ(result, 0);
 
@@ -405,11 +409,12 @@ TEST(restG4, Example_12_Generators_EnergyAndAngularCorrelated) {
     app.Run(options);
 
     // Run validation macro
-    const TString macro(thisExamplePath / "ValidateCosmicMuonsEnergyAngularCorrelated.C");
-    gROOT->ProcessLine(TString::Format(".L %s", macro.Data()));  // Load macro
+    const std::string macro = (thisExamplePath / "ValidateCosmicMuonsEnergyAngularCorrelated.C").string();
+    gROOT->ProcessLine(TRestTools::Format(".L %s", macro.c_str()).c_str());  // Load macro
     int error = 0;
     const int result = gROOT->ProcessLine(
-        TString::Format("ValidateCosmicMuonsEnergyAngularCorrelated(\"%s\")", options.outputFile.c_str()),
+        TRestTools::Format("ValidateCosmicMuonsEnergyAngularCorrelated(\"%s\")", options.outputFile.c_str())
+            .c_str(),
         &error);
     EXPECT_EQ(error, 0);
     EXPECT_EQ(result, 0);
@@ -430,11 +435,11 @@ TEST(restG4, Example_12_Generators_IsotropicWithRange) {
     app.Run(options);
 
     // Run validation macro
-    const TString macro(thisExamplePath / "ValidateIsotropicWithRange.C");
-    gROOT->ProcessLine(TString::Format(".L %s", macro.Data()));  // Load macro
+    const std::string macro = (thisExamplePath / "ValidateIsotropicWithRange.C").string();
+    gROOT->ProcessLine(TRestTools::Format(".L %s", macro.c_str()).c_str());  // Load macro
     int error = 0;
     const int result = gROOT->ProcessLine(
-        TString::Format("ValidateIsotropicWithRange(\"%s\")", options.outputFile.c_str()), &error);
+        TRestTools::Format("ValidateIsotropicWithRange(\"%s\")", options.outputFile.c_str()).c_str(), &error);
     EXPECT_EQ(error, 0);
     EXPECT_EQ(result, 0);
 
@@ -458,11 +463,11 @@ TEST(restG4, Example_13_IAXO_Neutrons) {
     TRestRun run(options.outputFile);
 
     // Run validation macro
-    const TString macro(thisExamplePath / "Validate.C");
-    gROOT->ProcessLine(TString::Format(".L %s", macro.Data()));  // Load macro
+    const std::string macro = (thisExamplePath / "Validate.C").string();
+    gROOT->ProcessLine(TRestTools::Format(".L %s", macro.c_str()).c_str());  // Load macro
     int error = 0;
-    const int result =
-        gROOT->ProcessLine(TString::Format("Validate(\"%s\")", options.outputFile.c_str()), &error);
+    const int result = gROOT->ProcessLine(
+        TRestTools::Format("Validate(\"%s\")", options.outputFile.c_str()).c_str(), &error);
     EXPECT_EQ(error, 0);
     EXPECT_EQ(result, 0);
 

@@ -21,7 +21,7 @@ struct Options {
     int nThreads = 0;
 
     int nEvents = 0;
-    Long_t seed = 0;
+    long seed = 0;
 
     int nRequestedEntries = 0;
     int timeLimitSeconds = 0;

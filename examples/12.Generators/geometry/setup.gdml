@@ -3,7 +3,7 @@
 
 <!DOCTYPE gdml [
         <!ENTITY geometry SYSTEM "geometry.gdml">
-        <!ENTITY materials SYSTEM "https://rest-for-physics.github.io/materials/rest.xml">
+        <!ENTITY materials SYSTEM "materials.xml">
         ]>
 
 <gdml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -21,13 +21,6 @@
     <define>
         <constant name="world_size" value="200"/>
 
-        <!-- Rough density values taken from wikipedia -->
-        <!-- Density values is what matters, pressure and temperature are irrelevant -->
-        <variable name="targetGasDensity" value="1.78"/> <!-- mg/cm3 -->
-        <variable name="quencherDensity" value="2.51*0.01"/> <!-- mg/cm3 -->
-        <variable name="quencherFraction" value="0.01"/>
-        <variable name="gasTemperature" value="300"/>
-        <variable name="gasPressure" value="1"/>
     </define>
 
     &materials;
