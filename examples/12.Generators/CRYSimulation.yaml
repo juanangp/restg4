@@ -1,0 +1,61 @@
+# restG4 simulation of the showers of CRYShowers.yaml (run restCRY first)
+#
+#    restG4 CRYSimulation.yaml
+#
+# Each event is a shower of the file, in order, with all its particles; the simulation stops when all of
+# them were simulated (nEvents 0: no other limit). The generator section of the stored TRestGeant4Metadata
+# gets showersUsed and exposureTime (TRestGeant4Metadata::GetCRYExposureTime), to normalize to a rate.
+# The geometry is the one of this example (geometry/setup.gdml), a world of 200 mm:
+# the CRY plane (subBoxLength 15 cm) must be inside it.
+g4Manager:
+  class: "TRestGeant4Manager"
+
+  run:
+    class: "TRestRun"
+    mainDataPath: ""
+    verbose: "info"
+    experimentName: "CRY"
+    runType: "simulation"
+    runNumber: "1"
+    runTag: "CRYShowers"
+    outputFileName: "Run[runNumber]_[runTag]_[experimentName].root"
+    runDescription: ""
+    runUser: "${ENV:USER}"
+
+  geant4Metadata:
+    class: "TRestGeant4Metadata"
+    gdmlFilename: "geometry/setup.gdml"
+    subEventTimeDelay: 100 us
+    seed: 137
+    nEvents: 0
+    saveAllEvents: false
+    activeVolumes:
+      - name: "gasVolume"
+        maxStep: 1 mm
+        sensitive: true
+
+    generator:
+      type: "cry"
+      filename: "cry_showers.root"
+      position: [0, 90, 0 mm]    # center of the CRY plane (its z = 0), above the gas, inside the world
+      verticalAxis: [0, 1, 0]    # the CRY +Z (up): the showers go down along -Y
+
+  physicsG4:
+    class: "TRestGeant4PhysicsLists"
+    cutForGamma: 1.0
+    cutForElectron: 1.0
+    cutForPositron: 1.0
+    cutForMuon: 1.0
+    cutForNeutron: 1.0
+    minEnergyRangeProductionCuts: 1.0 keV
+    maxEnergyRangeProductionCuts: 1.0 GeV
+
+    physicsList:
+      - name: "G4EmLivermorePhysics"
+      - name: "G4DecayPhysics"
+      - name: "G4RadioactiveDecayPhysics"
+      - name: "G4HadronElasticPhysicsHP"
+      - name: "G4IonBinaryCascadePhysics"
+      - name: "G4HadronPhysicsQGSP_BIC_HP"
+      - name: "G4NeutronTrackingCut"
+      - name: "G4EmExtraPhysics"

@@ -1,0 +1,25 @@
+# CRY cosmic-ray showers at sea level, in a 15 cm square, until 1 day of exposure or 1000000 showers
+#
+#    restCRY CRYShowers.yaml
+#
+# Then simulate them with restG4 (CRYSimulation.yaml, generator type "cry").
+cryShowers:
+  class: "TRestGeant4CRYShowers"
+  verbose: "info"
+  returnNeutrons: true
+  returnProtons: true
+  returnGammas: true
+  returnElectrons: true
+  returnMuons: true
+  returnPions: true
+  returnKaons: true
+  nParticlesMin: 1
+  nParticlesMax: 1000000
+  date: "7-1-2012"    # month-day-year (solar cycle)
+  latitude: 42        # geomagnetic latitude, degrees
+  altitude: 0         # 0, 2100 m or 11300 m
+  subBoxLength: 15 cm # about the size of the geometry, inside its world (200 mm, geometry/setup.gdml)
+  nShowers: 1000000   # the first reached of nShowers and exposureTime stops
+  exposureTime: 1 day
+  seed: 137           # 0: random, written to the file
+  outputFileName: "cry_showers.root"

@@ -1,0 +1,83 @@
+g4Manager:
+  class: "TRestGeant4Manager"
+
+  run:
+    class: "TRestRun"
+    mainDataPath: ""
+    verbose: "info"
+    experimentName: "IAXO"
+    runType: "simulation"
+    runNumber: "10"
+    runTag: "CosmicNeutrons"
+    outputFileName: "Run[runNumber]_[runTag]_[experimentName].root"
+    runDescription: ""
+    runUser: "${ENV:USER}"
+
+  geant4Metadata:
+    class: "TRestGeant4Metadata"
+    gdmlFilename: "./geometry/setup.gdml"
+    subEventTimeDelay: 100 us
+    seed: 17022
+    nRequestedEntries: 100
+    registerEmptyTracks: false
+    saveAllEvents: false
+    storeTracks: true
+    storeHadronicTargetInfo: true
+    removeUnwantedTracks: true
+    removeUnwantedTracksKeepZeroEnergyTracks: false
+
+#    energyRangeStored: [0.0, 30.0 keV]
+    activateAllVolumes: false
+    activeVolumes:
+      - name: "gasVolume"
+        maxStep: 0.05 mm
+        sensitive: true
+      - name: "^captureLayerVolume"
+        maxStep: 0.05 mm
+      - name: "^scintillatorVolume"
+        maxStep: 0.5 mm
+
+    generator:
+      type: "cosmic"
+      source:
+        particle: "neutron"
+        angular:
+          type: "formula"
+          formula: "Cos2"
+          direction: [0, -1, 0]
+          formulaNPoints: 1000
+        energy:
+          type: "formula"
+          formula: "CosmicNeutrons"
+          formulaNPoints: 10000
+          range: [10 MeV, 10 GeV]
+
+
+  physicsG4:
+    class: "TRestGeant4PhysicsLists"
+    cutForGamma: 1.0
+    cutForElectron: 1.0
+    cutForPositron: 1.0
+    cutForMuon: 1.0
+    cutForNeutron: 1.0
+    minEnergyRangeProductionCuts: 1.0 keV
+    maxEnergyRangeProductionCuts: 1.0 GeV
+
+    physicsList:
+      - name: "G4EmLivermorePhysics"
+        option:
+          - name: "pixe"
+            value: "fale"
+      - name: "G4DecayPhysics"
+      - name: "G4RadioactiveDecayPhysics"
+      - name: "G4RadioactiveDecay"
+        option:
+          - name: "ICM"
+            value: "true"
+          - name: "ARM"
+            value: "true"
+      - name: "G4HadronElasticPhysicsHP"
+      - name: "G4IonBinaryCascadePhysics"
+      - name: "G4HadronPhysicsQGSP_BIC_HP"
+      - name: "G4NeutronTrackingCut"
+      - name: "G4EmExtraPhysics"
