@@ -9,6 +9,7 @@
 #include <TRestGeant4Metadata.h>
 #include <TRestGeant4PhysicsLists.h>
 #include <TRestRun.h>
+#include <TRestYAMLUtils.h>
 
 #include <regex>
 #ifndef GEANT4_WITHOUT_G4RunManagerFactory
@@ -302,8 +303,8 @@ void Application::Run(const CommandLineOptions::Options& options) {
         filesystem::current_path(inputRmlPath);
     }
 
-    auto fConfig = TRestTools::OpenConfigFile(inputRmlClean);
-    auto findNode = TRestTools::GetMetadataClass(fConfig, "TRestGeant4Manager");
+    auto fConfig = TRestYAMLUtils::OpenConfigFile(inputRmlClean);
+    auto findNode = TRestYAMLUtils::GetMetadataClass(fConfig, "TRestGeant4Manager");
     if (!findNode.second.IsDefined()) {
         std::cout << "Error: TRestGeant4Manager not found in input file " << inputRmlClean << std::endl;
         exit(1);
@@ -489,7 +490,8 @@ void Application::Run(const CommandLineOptions::Options& options) {
         cout << "Writing geometry - Error - Unable to write geometry (geometry not found)" << endl;
         exit(1);
     }
-    gGeoManager->Write(geometryName, TObject::kOverwrite);
+    // With its hash: the datasets compare the geometry of their runs without reading it
+    TRestTools::WriteGeometry(gDirectory, gGeoManager, geometryName);
 
     cout << "Number of events: " << nEvents << endl;
     if (nEvents > 0)  // batch mode
